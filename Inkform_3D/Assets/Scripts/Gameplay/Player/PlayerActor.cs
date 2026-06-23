@@ -16,14 +16,31 @@ namespace Inkform.Gameplay
         PlayerMotor _motor;
         AbilitySystem _ability;
         PlayerContext _ctx;
+        ScanTarget _nearby;
 
         void Awake()
         {
             _motor = GetComponent<PlayerMotor>();
             _ability = GetComponent<AbilitySystem>();
             var rb = GetComponent<Rigidbody>();
-            _ctx = new PlayerContext(transform, rb, _motor);
+            var visual = GetComponent<PlayerFormVisual>();
+            _ctx = new PlayerContext(transform, rb, _motor, visual);
             _ability.Init(_ctx);
+        }
+
+        void Update()
+        {
+            // 检测最近可扫描目标的变化，广播给交互提示 UI。
+            var t = FindNearbyTarget();
+            if (t != _nearby)
+            {
+                _nearby = t;
+                EventBus.Publish(new NearbyScanTargetChanged
+                {
+                    HasTarget = t != null,
+                    FormName = (t != null && t.Config != null) ? t.Config.DisplayName : ""
+                });
+            }
         }
 
         void OnEnable()

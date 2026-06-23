@@ -8,12 +8,14 @@ namespace Inkform.Gameplay
         public readonly Transform Transform;
         public readonly Rigidbody Rigidbody;
         public readonly PlayerMotor Motor;
+        public readonly PlayerFormVisual Visual; // 形态表现钩子（可空）
 
-        public PlayerContext(Transform t, Rigidbody rb, PlayerMotor motor)
+        public PlayerContext(Transform t, Rigidbody rb, PlayerMotor motor, PlayerFormVisual visual = null)
         {
             Transform = t;
             Rigidbody = rb;
             Motor = motor;
+            Visual = visual;
         }
     }
 }

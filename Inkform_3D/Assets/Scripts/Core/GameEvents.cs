@@ -14,4 +14,9 @@ namespace Inkform.Core
     // ── 检查点—进度系统 ──
     public struct CheckpointReached { public int Id; }
     public struct OnRespawn         { public int CheckpointId; }
+
+    // ── 交互提示 / 关卡流程 ──
+    // 用 string 传形态显示名，让 UI 层无需依赖 Gameplay/Data。
+    public struct NearbyScanTargetChanged { public bool HasTarget; public string FormName; }
+    public struct LevelCompleted { }
 }

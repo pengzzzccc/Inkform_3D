@@ -19,8 +19,17 @@ namespace Inkform.Gameplay
         public FormId Id => Config.Form;
         public MovementProfile Movement => Config.Movement;
 
-        public virtual void OnMaterialize(PlayerContext ctx) => ctx.Motor.ApplyProfile(Movement);
-        public virtual void OnDissolve(PlayerContext ctx) => ctx.Motor.ApplyProfile(MovementProfile.Default);
+        public virtual void OnMaterialize(PlayerContext ctx)
+        {
+            ctx.Motor.ApplyProfile(Movement);
+            ctx.Visual?.ApplyForm(Config); // 形态视觉：膨胀重组
+        }
+
+        public virtual void OnDissolve(PlayerContext ctx)
+        {
+            ctx.Motor.ApplyProfile(MovementProfile.Default);
+            ctx.Visual?.ResetToCore();
+        }
         public virtual void OnUse(PlayerContext ctx) { }
         public virtual void Tick(PlayerContext ctx, float dt) { }
     }

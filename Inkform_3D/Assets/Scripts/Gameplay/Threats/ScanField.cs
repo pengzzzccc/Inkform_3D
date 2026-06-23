@@ -23,9 +23,28 @@ namespace Inkform.Gameplay
 
         public string Source = "ScanField";
 
+        [Header("探照灯视觉（可选，直接在此调灯光）")]
+        [Tooltip("关联的聚光灯；填了则下面三项会应用到它")]
+        public Light Spotlight;
+        public Color LightColor = new Color(1f, 0.25f, 0.25f);
+        [Min(0f)] public float LightIntensity = 14f;
+        [Min(0f)] public float LightRange = 18f;
+
         Transform _pivot;
 
         void Awake() => _pivot = LightOrigin != null ? LightOrigin : transform;
+
+        void Start() => ApplyLight();
+        void OnValidate() => ApplyLight();
+
+        /// <summary>把可调灯光参数应用到关联的聚光灯（编辑器/运行时均生效）。</summary>
+        public void ApplyLight()
+        {
+            if (Spotlight == null) return;
+            Spotlight.color = LightColor;
+            Spotlight.intensity = LightIntensity;
+            Spotlight.range = LightRange;
+        }
 
         void Update()
         {

@@ -26,5 +26,21 @@ namespace Inkform.Gameplay
             if (other.CompareTag("Player"))
                 CheckpointSystem.Instance?.Activate(this);
         }
+
+        // 编辑器场景视图可视化：画出检查点触发体与重生点（OnDrawGizmos 仅在编辑器调用）。
+        void OnDrawGizmos()
+        {
+            var col = GetComponent<BoxCollider>();
+            Vector3 size = col != null ? Vector3.Scale(col.size, transform.lossyScale) : Vector3.one * 2f;
+            Vector3 center = col != null ? transform.TransformPoint(col.center) : transform.position;
+
+            Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.18f);
+            Gizmos.DrawCube(center, size);
+            Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.9f);
+            Gizmos.DrawWireCube(center, size);
+
+            Gizmos.color = Color.green;
+            Gizmos.DrawSphere(Respawn, 0.2f);
+        }
     }
 }
