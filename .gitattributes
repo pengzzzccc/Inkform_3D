@@ -1,2 +1,105 @@
+# ==========================================================================
+# Inkform_3D — Git attributes
+# Line-ending normalization + Git LFS for binary assets + Unity smart merge.
+# Patterns apply recursively, so they cover the nested Inkform_3D/ project too.
+# ==========================================================================
+
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# --------------------------------------------------------------------------
+# Unity text assets — keep as text, use Unity's YAML smart merge tool.
+# (Do NOT put these in LFS; they need to be diffable/mergeable.)
+# Enable the merge driver locally with:
+#   git config merge.unityyamlmerge.driver "'<UnityHub>/<ver>/Editor/Data/Tools/UnityYAMLMerge.exe' merge -p %O %B %A %A"
+# --------------------------------------------------------------------------
+*.unity           merge=unityyamlmerge eol=lf
+*.prefab          merge=unityyamlmerge eol=lf
+*.mat             merge=unityyamlmerge eol=lf
+*.anim            merge=unityyamlmerge eol=lf
+*.controller      merge=unityyamlmerge eol=lf
+*.overrideController merge=unityyamlmerge eol=lf
+*.asset           merge=unityyamlmerge eol=lf
+*.physicMaterial  merge=unityyamlmerge eol=lf
+*.physicsMaterial2D merge=unityyamlmerge eol=lf
+*.playable        merge=unityyamlmerge eol=lf
+*.mask            merge=unityyamlmerge eol=lf
+*.brush           merge=unityyamlmerge eol=lf
+*.flare           merge=unityyamlmerge eol=lf
+*.lighting        merge=unityyamlmerge eol=lf
+*.meta            merge=unityyamlmerge eol=lf
+
+# Keep Unity-related plain-text formats as text
+*.cs              text diff=csharp
+*.shader          text
+*.cginc           text
+*.hlsl            text
+*.compute         text
+*.json            text
+*.md              text
+*.txt             text
+*.uss             text
+*.uxml            text
+*.yml             text
+*.yaml            text
+
+# --------------------------------------------------------------------------
+# Git LFS — binary assets
+# --------------------------------------------------------------------------
+
+# Images
+*.png   filter=lfs diff=lfs merge=lfs -text
+*.PNG   filter=lfs diff=lfs merge=lfs -text
+*.jpg   filter=lfs diff=lfs merge=lfs -text
+*.JPG   filter=lfs diff=lfs merge=lfs -text
+*.jpeg  filter=lfs diff=lfs merge=lfs -text
+*.gif   filter=lfs diff=lfs merge=lfs -text
+*.bmp   filter=lfs diff=lfs merge=lfs -text
+*.psd   filter=lfs diff=lfs merge=lfs -text
+*.PSD   filter=lfs diff=lfs merge=lfs -text
+*.tga   filter=lfs diff=lfs merge=lfs -text
+*.TGA   filter=lfs diff=lfs merge=lfs -text
+*.tif   filter=lfs diff=lfs merge=lfs -text
+*.tiff  filter=lfs diff=lfs merge=lfs -text
+*.exr   filter=lfs diff=lfs merge=lfs -text
+*.hdr   filter=lfs diff=lfs merge=lfs -text
+
+# 3D models
+*.fbx   filter=lfs diff=lfs merge=lfs -text
+*.FBX   filter=lfs diff=lfs merge=lfs -text
+*.obj   filter=lfs diff=lfs merge=lfs -text
+*.OBJ   filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.dae   filter=lfs diff=lfs merge=lfs -text
+*.3ds   filter=lfs diff=lfs merge=lfs -text
+*.3DS   filter=lfs diff=lfs merge=lfs -text
+*.ma    filter=lfs diff=lfs merge=lfs -text
+*.mb    filter=lfs diff=lfs merge=lfs -text
+
+# Audio
+*.wav   filter=lfs diff=lfs merge=lfs -text
+*.WAV   filter=lfs diff=lfs merge=lfs -text
+*.mp3   filter=lfs diff=lfs merge=lfs -text
+*.ogg   filter=lfs diff=lfs merge=lfs -text
+*.aif   filter=lfs diff=lfs merge=lfs -text
+*.aiff  filter=lfs diff=lfs merge=lfs -text
+*.flac  filter=lfs diff=lfs merge=lfs -text
+
+# Video
+*.mp4   filter=lfs diff=lfs merge=lfs -text
+*.mov   filter=lfs diff=lfs merge=lfs -text
+*.webm  filter=lfs diff=lfs merge=lfs -text
+
+# Fonts
+*.ttf   filter=lfs diff=lfs merge=lfs -text
+*.otf   filter=lfs diff=lfs merge=lfs -text
+
+# Other binaries
+*.unitypackage filter=lfs diff=lfs merge=lfs -text
+*.dll   filter=lfs diff=lfs merge=lfs -text
+*.so    filter=lfs diff=lfs merge=lfs -text
+*.a     filter=lfs diff=lfs merge=lfs -text
+*.bundle filter=lfs diff=lfs merge=lfs -text
+*.aar   filter=lfs diff=lfs merge=lfs -text
+*.dylib filter=lfs diff=lfs merge=lfs -text
+*.zip   filter=lfs diff=lfs merge=lfs -text

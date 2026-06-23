@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inkform — A 3D Stealth-Puzzle Game</title>
+  <meta name="description" content="Inkform is a 3D cinematic stealth-puzzle game. Control a creature of ink, swallow objects to gain abilities, and escape the laboratory through the gaps in the scan." />
+  <meta property="og:title" content="Inkform — A 3D Stealth-Puzzle Game" />
+  <meta property="og:description" content="A body of ink, swallowing objects to become abilities — sneaking and solving puzzles through the gaps in the scan, escaping to freedom." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ink-bg" aria-hidden="true"></div>
+  <div class="scanline" aria-hidden="true"></div>
+
+  <!-- ===================== HERO ===================== -->
+  <header class="hero">
+    <nav class="nav">
+      <span class="brand">INKFORM</span>
+      <div class="nav-links">
+        <a href="#concept">Concept</a>
+        <a href="#abilities">Abilities</a>
+        <a href="#threats">Threats</a>
+        <a href="#walkthrough">Demo</a>
+        <a class="nav-cta" href="https://github.com/pengzzzccc/Inkform_3D" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </nav>
+
+    <div class="hero-inner">
+      <p class="eyebrow">3D · Cinematic · Stealth-Puzzle</p>
+      <h1 class="title">Inkform</h1>
+      <p class="tagline">
+        A body of ink, swallowing objects to become abilities —<br />
+        sneaking and solving puzzles through the gaps in the scan, escaping to freedom.
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#concept">Discover the game</a>
+        <a class="btn btn-ghost" href="https://github.com/pengzzzccc/Inkform_3D/blob/main/Inkform_3D/Docs/GDD_inkform_3D_Puzzle_EN.md" target="_blank" rel="noopener">Read the GDD</a>
+      </div>
+    </div>
+    <div class="scroll-hint" aria-hidden="true">scroll ↓</div>
+  </header>
+
+  <main>
+    <!-- ===================== CONCEPT ===================== -->
+    <section id="concept" class="section">
+      <div class="section-head">
+        <span class="kicker">01 / High Concept</span>
+        <h2>An experiment that woke up wanting out.</h2>
+      </div>
+      <p class="lede">
+        An experimental being made of ink awakens deep within a laboratory and develops the will to escape.
+        The lab is still operational; its automated scanning and "sweeper" systems treat any anomaly as a
+        target to be cleansed. You move through the cold, silent dark — swallowing the right object at the
+        right moment to slip past the light and unlock the way ahead.
+      </p>
+
+      <div class="pillars">
+        <article class="pillar">
+          <span class="pillar-no">01</span>
+          <h3>Swallow-to-Empower</h3>
+          <p>Every ability is both a stealth tool and a puzzle key. One object, one solution.</p>
+        </article>
+        <article class="pillar">
+          <span class="pillar-no">02</span>
+          <h3>Silent Stealth</h3>
+          <p>Threats are environmental pressure, not combat. The evasion rhythm creates the tension.</p>
+        </article>
+        <article class="pillar">
+          <span class="pillar-no">03</span>
+          <h3>Environmental Storytelling</h3>
+          <p>No dialogue. The story is told through scenery, light and shadow, and sound.</p>
+        </article>
+        <article class="pillar">
+          <span class="pillar-no">04</span>
+          <h3>One Object, One Thought</h3>
+          <p>Puzzles revolve around "what should I swallow right now," rewarding observation.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ===================== CORE LOOP ===================== -->
+    <section id="loop" class="section section-loop">
+      <div class="section-head">
+        <span class="kicker">02 / Core Loop</span>
+        <h2>Tension, then release. Over and over.</h2>
+      </div>
+      <div class="loop">
+        <div class="loop-step"><span>Find clues</span></div>
+        <div class="loop-arrow">→</div>
+        <div class="loop-step"><span>Evade the scan</span></div>
+        <div class="loop-arrow">→</div>
+        <div class="loop-step"><span>Solve the puzzle</span></div>
+        <div class="loop-arrow">→</div>
+        <div class="loop-step loop-step-loop"><span>Proceed</span></div>
+      </div>
+      <p class="lede center">
+        Touched by scan red-light or a searchlight is <strong>instant death</strong> — back to the nearest
+        checkpoint. No health bar, no combat. Just you, the light, and the gaps between sweeps.
+      </p>
+    </section>
+
+    <!-- ===================== ABILITIES ===================== -->
+    <section id="abilities" class="section">
+      <div class="section-head">
+        <span class="kicker">03 / Swallow → Ability</span>
+        <h2>Six objects. Six ways through.</h2>
+      </div>
+      <div class="cards">
+        <article class="card card-core">
+          <div class="card-top"><span class="card-icon">🎮</span><span class="badge">Core</span></div>
+          <h3>Remote</h3>
+          <p class="card-effect">Remotely control giant machinery — cranes, conveyors, gates, light towers.</p>
+          <ul>
+            <li><b>Stealth:</b> switch off or redirect scan-light towers; move giant cover.</li>
+            <li><b>Puzzle:</b> move platforms to bridge gaps; align gears and belts.</li>
+            <li><b>Limit:</b> you must stay still while controlling — exposed.</li>
+          </ul>
+        </article>
+
+        <article class="card card-core">
+          <div class="card-top"><span class="card-icon">⚓</span><span class="badge">Core</span></div>
+          <h3>Anchor</h3>
+          <p class="card-effect">Your body becomes heavy and can sink beneath the surface.</p>
+          <ul>
+            <li><b>Stealth:</b> sink into underwater passages to dodge surface scans.</li>
+            <li><b>Puzzle:</b> hold down weight switches; reach low passages.</li>
+            <li><b>Limit:</b> slow while heavy; cannot jump or float up.</li>
+          </ul>
+        </article>
+
+        <article class="card card-core">
+          <div class="card-top"><span class="card-icon">📍</span><span class="badge">Core</span></div>
+          <h3>Teleport Beacon</h3>
+          <p class="card-effect">Place a marker, then teleport back to it at any time.</p>
+          <ul>
+            <li><b>Stealth:</b> lure the Sweeper, then teleport back to safety.</li>
+            <li><b>Puzzle:</b> cross one-way break-points; work two distant mechanisms.</li>
+            <li><b>Limit:</b> one marker at a time; teleport has a cooldown.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <div class="card-top"><span class="card-icon">💡</span><span class="badge badge-seg">Segment</span></div>
+          <h3>Bulb / Battery</h3>
+          <p class="card-effect">Emit light yourself, or discharge into mechanisms.</p>
+          <ul>
+            <li><b>Stealth:</b> overload nearby lights to create darkness.</li>
+            <li><b>Puzzle:</b> power dead mechanisms; trip light-sensitive switches.</li>
+            <li><b>Limit:</b> emitting light draws the scanners; limited charge.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <div class="card-top"><span class="card-icon">🧲</span><span class="badge badge-seg">Segment</span></div>
+          <h3>Magnet</h3>
+          <p class="card-effect">Become magnetic and attract metal.</p>
+          <ul>
+            <li><b>Stealth:</b> drag a metal plate as movable cover against scan-light.</li>
+            <li><b>Puzzle:</b> pull metal doors; short or activate circuits.</li>
+            <li><b>Limit:</b> one piece at a time; slow when loaded.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <div class="card-top"><span class="card-icon">🎈</span><span class="badge badge-seg">Segment</span></div>
+          <h3>Balloon / Helium</h3>
+          <p class="card-effect">Become light and float briefly upward.</p>
+          <ul>
+            <li><b>Stealth:</b> float over pressure-sensor zones; rise to high cover.</li>
+            <li><b>Puzzle:</b> cross high walls; reach elevated switches.</li>
+            <li><b>Limit:</b> limited float time; blown by airflow; delayed landing.</li>
+          </ul>
+        </article>
+      </div>
+      <p class="note">The <b>core three</b> — Remote, Anchor, Teleport — carry the critical path and climax. The rest each own a self-contained segment.</p>
+    </section>
+
+    <!-- ===================== THREATS ===================== -->
+    <section id="threats" class="section section-threats">
+      <div class="section-head">
+        <span class="kicker">04 / Threat &amp; Stealth</span>
+        <h2>The light is the only thing that can kill you.</h2>
+      </div>
+      <div class="threats">
+        <article class="threat">
+          <h3>Fixed Scanning Devices</h3>
+          <p>Rotating searchlights, sweeping laser grids, fixed cameras — predictable cycles. Time your passage or evade with an ability.</p>
+        </article>
+        <article class="threat threat-feature">
+          <h3>The "Sweeper"</h3>
+          <p>A colossus that periodically passes through the area: approach from afar → enter and scan → leave. Its low-frequency approach sound is your auditory radar. The demo's signature high-pressure climax.</p>
+        </article>
+        <article class="threat">
+          <h3>Mobile Patrollers <span class="opt">(optional)</span></h3>
+          <p>Drones and guards. Red light in their facing direction means instant death; their perception range is wider than the deadly beam.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ===================== WALKTHROUGH ===================== -->
+    <section id="walkthrough" class="section">
+      <div class="section-head">
+        <span class="kicker">05 / Vertical Slice</span>
+        <h2>A single-level demo, end to end.</h2>
+      </div>
+      <ol class="timeline">
+        <li><span class="t-tag">A · Awakening</span> Learn movement, swallow/spit, take cover. Establish tone.</li>
+        <li><span class="t-tag">B · Scan Corridor</span> Time fixed searchlights to pass through.</li>
+        <li><span class="t-tag">C · Water Area</span> The sluice puzzle — your first swallow-to-solve loop. <em>Anchor</em></li>
+        <li><span class="t-tag">D · Machinery Hall</span> Crane-bridge puzzle and a magnet cover bit. <em>Remote · Magnet</em></li>
+        <li><span class="t-tag">E · Dark Power</span> Power the pre-exit door under risk of exposure. <em>Bulb · Battery</em></li>
+        <li><span class="t-tag">F · Sweeper Climax</span> Break-point displacement under the passing Sweeper. <em>Teleport · Balloon</em></li>
+        <li><span class="t-tag">G · Exit</span> Solve the final mechanism — the door opens.</li>
+        <li><span class="t-tag">H · Closing Shot</span> The ink creature walks out, gazing toward the light beyond.</li>
+      </ol>
+    </section>
+
+    <!-- ===================== GALLERY PLACEHOLDER ===================== -->
+    <section id="gallery" class="section">
+      <div class="section-head">
+        <span class="kicker">06 / Gallery</span>
+        <h2>Screenshots coming soon.</h2>
+      </div>
+      <div class="gallery">
+        <figure class="shot"><span>Awakening</span></figure>
+        <figure class="shot"><span>The Scan Corridor</span></figure>
+        <figure class="shot"><span>The Sweeper</span></figure>
+      </div>
+      <p class="note">Placeholders — captures from the vertical-slice demo will be dropped in here.</p>
+    </section>
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="brand">INKFORM</span>
+      <p>A 3D cinematic stealth-puzzle game · built in Unity 6 (URP)</p>
+      <div class="footer-links">
+        <a href="https://github.com/pengzzzccc/Inkform_3D" target="_blank" rel="noopener">Repository</a>
+        <a href="https://github.com/pengzzzccc/Inkform_3D/blob/main/Inkform_3D/Docs/GDD_inkform_3D_Puzzle_EN.md" target="_blank" rel="noopener">Design Document</a>
+        <a href="https://github.com/pengzzzccc/Inkform_3D/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+      </div>
+      <p class="copyright">© 2026 pengzzzccc</p>
+    </div>
+  </footer>
+</body>
+</html>
