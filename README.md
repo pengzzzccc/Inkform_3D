@@ -1,20 +1,21 @@
 # Inkform
 
-> **A body of ink, swallowing objects to become abilities — sneaking and solving puzzles through the gaps in the scan, escaping to freedom.**
+> **A body of ink, scanning objects to mimic their forms and powers — sneaking and solving puzzles through the gaps in the scan, escaping to freedom.**
 
-**Inkform** is a 3D, cinematic-atmosphere **stealth-puzzle** game. You control a creature made of ink escaping the laboratory that cultivated it. It can **swallow different objects to gain matching abilities** — swallow a remote to control giant machinery, swallow an anchor to sink underwater — using them to evade periodic scanning threats and solve the puzzles blocking its path.
+**Inkform** is a 3D, cinematic-atmosphere **stealth-puzzle** game. You control a creature made of countless nanobots escaping the laboratory that cultivated it. It can **scan different objects to mimic their form and gain matching abilities** — scan a remote to control giant machinery, scan an anchor to sink underwater — using them to evade periodic scanning threats and solve the puzzles blocking its path. Each mimicked form also **changes how you move** (the anchor is heavier, slower, jumps lower; the balloon floats).
 
 🌐 **Game intro site:** https://pengzzzccc.github.io/Inkform_3D/
 📖 **Full design doc (GDD):** [English](Inkform_3D/Docs/GDD_inkform_3D_Puzzle_EN.md) · [中文](Inkform_3D/Docs/GDD_inkform_3D_Puzzle.md)
+🛠 **Technical design (TDD — architecture & tech stack):** [中文](Inkform_3D/Docs/TDD_inkform_3D_Architecture.md)
 
 ---
 
 ## Design Pillars
 
-1. **Swallow-to-Empower** — every ability is both a stealth tool and a puzzle key. One object, one solution.
+1. **Scan-to-Mimic** — every ability is both a stealth tool and a puzzle key. One object, one solution.
 2. **Silent Stealth** — threats are *environmental pressure*, not combat. The evasion rhythm creates tension.
 3. **Environmental Storytelling** — no dialogue; the story is told through scenery, light/shadow, and sound (INSIDE / Somerville tone).
-4. **One Object, One Thought** — puzzles revolve around *"what should I swallow right now,"* rewarding observation and experimentation.
+4. **One Object, One Thought** — puzzles revolve around *"what form should I mimic right now,"* rewarding observation and experimentation.
 
 ## Core Loop
 
@@ -24,7 +25,7 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
 
 Evasion and puzzle segments are interleaved into a tension-and-release rhythm. Being touched by scan red-light / searchlight is **instant death**, returning you to the nearest distributed checkpoint — no health bar, no combat.
 
-## Swallow → Ability Roster
+## Scan → Mimic Ability Roster
 
 | Object | Effect | Stealth use | Puzzle use |
 |--------|--------|-------------|------------|

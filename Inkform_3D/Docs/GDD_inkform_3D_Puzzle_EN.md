@@ -4,22 +4,22 @@
 
 ## 1. High Concept
 
-Inkform is a **3D, cinematic-atmosphere stealth-puzzle game**. The player controls a creature made of ink, escaping from the laboratory that cultivated it. It can **swallow different objects to gain corresponding abilities** (swallow a remote to control giant machinery, swallow an anchor to sink underwater…), using them to evade periodic scanning threats and solve the puzzles blocking its path.
+Inkform is a **3D, cinematic-atmosphere stealth-puzzle game**. The player controls a creature made of ink, escaping from the laboratory that cultivated it. It can **scan different objects to gain corresponding abilities** (scan a remote to control giant machinery, scan an anchor to sink underwater…), using them to evade periodic scanning threats and solve the puzzles blocking its path.
 
-**One line**: A body of ink, swallowing objects to become abilities, sneaking and solving puzzles through the gaps in the scan — escaping to freedom.
+**One line**: A body of ink, scanning objects to mimic their forms and powers, sneaking and solving puzzles through the gaps in the scan — escaping to freedom.
 
 ### Design Pillars
-1. **Swallow-to-Empower**: Every ability is both a stealth tool and a puzzle key — one object, one solution.
+1. **Scan-to-Mimic**: Every ability is both a stealth tool and a puzzle key — one object, one solution.
 2. **Silent Stealth**: Threats are "environmental pressure," not combat — evasion rhythm creates tension.
 3. **Environmental Storytelling**: No dialogue; the story is told through scenery, light/shadow, and sound (INSIDE / Somerville tone).
-4. **One Object, One Thought**: Puzzles revolve around "what should I swallow right now," encouraging observation and experimentation.
+4. **One Object, One Thought**: Puzzles revolve around "what form should I mimic right now," encouraging observation and experimentation.
 
 ## 2. Story & Tone (Streamlined)
 
-- **Setting**: An experimental being made of ink awakens deep within a laboratory and develops the will to escape. The lab is still operational; its automated scanning and "sweeper" systems treat any anomaly as a target to be cleansed.
-- **Demo Narrative Arc**: Awakening (learn movement & swallowing) → traverse the scan-locked zones → solve the puzzle leading to the exit → at the exit, gaze toward the light beyond the lab.
+- **Setting**: An experimental being made of ink-black nanobots awakens deep within a laboratory and develops the will to escape. The lab is still operational; its automated scanning and "sweeper" systems treat any anomaly as a target to be cleansed.
+- **Demo Narrative Arc**: Awakening (learn movement & scan-mimicking) → traverse the scan-locked zones → solve the puzzle leading to the exit → at the exit, gaze toward the light beyond the lab.
 - **Tone**: Oppressive, lonely, curious all at once; cold palette, strong light/shadow; no dialogue — emotion carried by rhythm and sound.
-- **Protagonist Presentation**: A malleable ink-textured body. After swallowing, it transforms by being "stuffed full / bulged out by the object" (referencing the cute, clumsy charm of *Kirby and the Forgotten Land*'s Mouthful Mode), contrasting against the cold environment.
+- **Protagonist Presentation**: A malleable body of countless nanobots. Its base form is a hybrid of "semi-fluid core + hard-surface plating" (a dark, semi-transparent fluid core wrapped in tiny, cold-lit metal plates that flow and rearrange). After scanning a target, the nanobots **expand and reassemble** from the base form into the target's shape (referencing the cute, clumsy charm of *Kirby and the Forgotten Land*'s Mouthful Mode), contrasting against the cold environment.
 
 ## 3. Core Gameplay Loop
 
@@ -28,7 +28,7 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
 ```
 
 - **Evasion segment**: When the large "Sweeper" entity periodically passes by / fixed scanning devices scan on a rhythm, the player must hide in cover or evade with an ability. Touched by the light = instant death. High pressure, silent.
-- **Puzzle segment**: Once the threat passes or is evaded, the player explores the scene, finds clues, and picks the right swallow ability to break the obstacle. Calm, thoughtful.
+- **Puzzle segment**: Once the threat passes or is evaded, the player explores the scene, finds clues, and scans the right object to mimic the form that breaks the obstacle. Calm, thoughtful.
 - The two segment types are **interleaved**, forming a tension-and-release rhythm.
 
 ## 4. Controls & Camera
@@ -41,17 +41,18 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
 ### Base Controls (always available)
 | Input | Action |
 |-------|--------|
-| Move | Move in all directions (base mobility, retained no matter what is swallowed) |
-| Interact | Trigger mechanisms, read clues, swallow/spit out objects |
-| Use Ability | Trigger the ability granted by the currently swallowed object |
+| Move | Move in all directions (base mobility, retained no matter which form is mimicked; handling changes per form) |
+| Interact | Trigger mechanisms, read clues, scan-mimic / revert |
+| Use Ability | Trigger the ability granted by the currently mimicked form |
 | Take Cover | Press against / tuck into scene cover to evade scans |
 
-- **Swallow rule**: The player can swallow only one type of object at a time; you must swallow at a swallow point, and can spit out the current object before swallowing another. Switching has a spatial cost (you must return to the corresponding object).
+- **Scan-mimic rule**: The player can mimic only one form at a time; you must scan at a scan target, and can revert to the base form before scanning another. Switching has a spatial cost (you must return to the corresponding object).
 
-## 5. Swallow–Ability System (Core System)
+## 5. Scan–Mimic Ability System (Core System)
 
 ### General Rules
-- Hold only one ability at a time; swallow = gain ability and transform, spit = return to base ink form.
+- Hold only one ability at a time; scan = gain ability and reassemble into the mimicked form, revert = return to the base nanite form.
+- **Movement changes with the mimicked form**: each form alters mass, speed, jump, buoyancy, etc. (e.g. the anchor is heavier, slower, jumps lower and can sink; the balloon is lighter and can float up).
 - Objects are placed at fixed positions in the scene → this creates an "ability reachability" spatial constraint, a key lever for level and puzzle design.
 - Each transformation has a clear visual/silhouette difference, so players and the camera can read the current state.
 
@@ -59,7 +60,7 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
 
 **Core Three (span the critical path)**
 
-| # | Swallowed Object | Effect | Stealth Use | Puzzle Use | Limitation |
+| # | Scan Target | Effect | Stealth Use | Puzzle Use | Limitation |
 |---|------------------|--------|-------------|------------|------------|
 | 1 | **Remote** | Remotely control giant machinery in the scene (cranes, conveyors, gates, searchlight towers) | Switch off / turn scan-light towers, move giant cover to block sightlines | Move platforms to bridge gaps, align gears / convey objects on belts | Must stay still while controlling; easily exposed during it |
 | 2 | **Anchor** | Body becomes heavy, can sink | Sink into underwater passages to dodge surface scans | Hold down weight switches, resist airflow/water currents, sink to low passages | Slow movement while heavy; cannot jump / float up |
@@ -67,7 +68,7 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
 
 **Segment-Specific (introduced in specific segments to enrich puzzles)**
 
-| # | Swallowed Object | Effect | Stealth Use | Puzzle Use | Limitation |
+| # | Scan Target | Effect | Stealth Use | Puzzle Use | Limitation |
 |---|------------------|--------|-------------|------------|------------|
 | 4 | **Bulb / Battery** | Emit light yourself, or discharge into mechanisms | Light up dark segments (exposure risk) / briefly overload nearby lights to create darkness for evading scans | Power unpowered mechanisms, activate light-sensitive switches | Emitting light draws the scanning system's attention; limited charge/duration |
 | 5 | **Magnet / Electromagnet** | Magnetic, attracts metal | Attach to a metal plate to use as **movable cover** blocking scan-light | Pull metal doors, grab metal keys, short / activate circuits | Only one piece at a time; slow movement when loaded |
@@ -110,7 +111,7 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
 | Height / reach | Balloon | Float up high to press a separated switch |
 
 ### Demo Core Puzzles (3 suggested)
-1. **Sluice puzzle (Anchor)**: A flooded passage blocks the way; swallow the anchor, sink to the bottom, open the drain valve; once the water level drops, a new path opens.
+1. **Sluice puzzle (Anchor)**: A flooded passage blocks the way; scan the anchor to mimic its form, sink to the bottom, open the drain valve; once the water level drops, a new path opens.
 2. **Crane-bridge puzzle (Remote + fixed scan)**: Use the remote to move containers with a crane to form a bridge, while dodging a rotating searchlight — you stay still while controlling, so you must time the light's scan gap.
 3. **Break-point displacement puzzle (Teleport Beacon + Sweeper climax)**: In a hall the Sweeper periodically sweeps, first place a marker in a safe blind spot, then dash to the far end during a gap to trigger the exit mechanism, teleporting back to the marker just before the scan nears.
 
@@ -118,9 +119,9 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
 
 | Segment | Content | Ability Introduced | Main Threat | Purpose |
 |---------|---------|--------------------|-------------|---------|
-| A. Awakening | Learn movement, swallow/spit, take cover | (base) | None / light | Tutorial, establish tone |
+| A. Awakening | Learn movement, scan-mimic/revert, take cover | (base) | None / light | Tutorial, establish tone |
 | B. Scan Corridor | Time fixed searchlights to pass through | — | Fixed scanning devices | Teach "observe cycle, use cover" |
-| C. Water Area | Sluice puzzle | **Anchor** | Surface scan | Teach the swallow-puzzle loop |
+| C. Water Area | Sluice puzzle | **Anchor** | Surface scan | Teach the scan-mimic puzzle loop |
 | D. Machinery Hall | Crane-bridge puzzle; magnet movable-cover bit | **Remote**, **Magnet** | Fixed scan + rotating tower | Compound ability use |
 | E. Dark Power Segment | Power the pre-exit door / light-sensitive switch | **Bulb·Battery** | Localized scan in darkness | Risk-reward decision |
 | F. Sweeper Climax | Break-point displacement puzzle in the hall | **Teleport Beacon** (+ Balloon for high blind spots) | **Large Sweeper passes** | High-pressure synthesis |
@@ -130,7 +131,7 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
 > Order is adjustable; the Balloon bit can merge into F or stand alone (e.g. reaching a high teleport object).
 
 ## 9. Level Element Checklist (Production List)
-- **Swallowable object points** ×6 (Remote, Anchor, Teleport Beacon, Bulb/Battery, Magnet, Balloon) — fixed respawn positions.
+- **Scan target points** ×6 (Remote, Anchor, Teleport Beacon, Bulb/Battery, Magnet, Balloon) — fixed respawn positions.
 - **Cover**: Static cover, tuck-in pipes, shadow zones.
 - **Threats**: Fixed searchlights / laser grids / cameras, the Sweeper entity, (optional) patrol drones.
 - **Mechanisms**: Sluice valves, cranes/conveyors, weight plates, power points / light-sensitive switches, one-way doors, exit door.
@@ -165,7 +166,7 @@ Find clues ──▶ Evade scanning threats ──▶ Solve puzzle ──▶ (pr
   - Checkpoint / Progression system.
   > Note: The above implementations currently target 2D; the cost of 3D adaptation must be assessed. This demo is treated as a technical validation of the new direction.
 - **Demo Scope / Milestones (suggested)**:
-  1. M1: Base movement + swallow/spit + one fixed scanning threat + death/checkpoint (segments A, B).
+  1. M1: Base movement + scan-mimic/revert + one fixed scanning threat + death/checkpoint (segments A, B).
   2. M2: Core three abilities (Remote/Anchor/Teleport) + their puzzles (segments C, D, F).
   3. M3: Segment-specific abilities (Bulb·Battery/Magnet/Balloon) + art & audio atmosphere + closing shot (segments E, G, H).
 
