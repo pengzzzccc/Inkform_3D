@@ -1,0 +1,19 @@
+{
+    "name": "Inkform.UI",
+    "rootNamespace": "Inkform.UI",
+    "references": [
+        "Inkform.Core",
+        "Inkform.Data",
+        "UnityEngine.UI",
+        "UniTask"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

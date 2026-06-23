@@ -1,0 +1,26 @@
+{
+    "name": "Inkform.Editor",
+    "rootNamespace": "Inkform.EditorTools",
+    "references": [
+        "Inkform.Core",
+        "Inkform.Data",
+        "Inkform.Gameplay",
+        "Inkform.UI",
+        "Inkform.Camera",
+        "Unity.Cinemachine",
+        "Unity.InputSystem",
+        "UnityEngine.UI",
+        "UniTask"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,17 @@
+{
+    "name": "Inkform.Camera",
+    "rootNamespace": "Inkform.GameCamera",
+    "references": [
+        "Inkform.Core",
+        "Unity.Cinemachine"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
