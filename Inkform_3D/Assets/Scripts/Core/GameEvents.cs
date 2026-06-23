@@ -19,4 +19,8 @@ namespace Inkform.Core
     // 用 string 传形态显示名，让 UI 层无需依赖 Gameplay/Data。
     public struct NearbyScanTargetChanged { public bool HasTarget; public string FormName; }
     public struct LevelCompleted { }
+
+    // ── 玩家动作（供音效等订阅）──
+    public struct Jumped { }
+    public struct Landed { }
 }

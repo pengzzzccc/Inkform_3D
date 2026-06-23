@@ -2,6 +2,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
+using UnityEngine.Splines;
+using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using Unity.Cinemachine;
@@ -10,6 +12,7 @@ using Inkform.Data;
 using Inkform.Gameplay;
 using Inkform.UI;
 using Inkform.GameCamera;
+using Inkform.Audio;
 
 namespace Inkform.EditorTools
 {
@@ -35,6 +38,8 @@ namespace Inkform.EditorTools
             int playerLayer = EnsureLayer("Player");
             int coverLayer = EnsureLayer("Cover");
 
+            var clips = PlaceholderAudioGenerator.EnsureAll();
+
             var anchorCfg = EnsureForm(AnchorPath, FormId.Anchor, "船锚",
                 new MovementProfile { MoveSpeedMul = 0.45f, MassMul = 3f, JumpHeightMul = 0.3f, Buoyancy = -8f, Drag = 0.4f, CanJump = true },
                 new Color(1f, 0.55f, 0.2f), new Vector3(1.3f, 0.6f, 1.3f));
@@ -54,31 +59,50 @@ namespace Inkform.EditorTools
             // 地面 + 背墙
             MakeBox("Ground", new Vector3(27f, -0.5f, 0f), new Vector3(64f, 1f, 8f), 0, new Color(0.18f, 0.2f, 0.24f));
             MakeBox("BackWall", new Vector3(27f, 3f, 4.6f), new Vector3(64f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f));
+            MakeBox("FrontWall", new Vector3(27f, 3f, -4.6f), new Vector3(64f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f)); // 防 WASD 前后走出地面
 
             // A 段：扫描目标（颜色取自形态）+ 矮坎
             MakeScanTarget("ScanTarget_Light", new Vector3(8f, 0.6f, 0f), lightCfg);
             MakeScanTarget("ScanTarget_Anchor", new Vector3(13f, 0.6f, 0f), anchorCfg);
             MakeBox("Ledge", new Vector3(19f, 0.5f, 0f), new Vector3(1.2f, 1.0f, 6f), 0, new Color(0.3f, 0.32f, 0.36f));
 
-            // B 段：探照灯 + 致死区 + 红色危险视觉 + 掩体棚
-            var lightOrigin = new GameObject("ScanLight_Origin");
-            lightOrigin.transform.position = new Vector3(45f, 8f, 0f);
+            // B 段：沿样条移动的探照灯（整组）+ 致死区 + 红色危险视觉 + 掩体棚
+            // 样条路径（走廊上方来回）
+            var pathGo = new GameObject("ScanLight_Path");
+            var spline = pathGo.AddComponent<SplineContainer>();
+            spline.Spline.Add(new BezierKnot(new float3(33f, 8f, 0f)));
+            spline.Spline.Add(new BezierKnot(new float3(52f, 8f, 0f)));
+
+            // 移动根（沿样条 PingPong）
+            var root = new GameObject("ScanLight_Root");
+            root.transform.position = new Vector3(33f, 8f, 0f);
+            var mover = root.AddComponent<SplinePathMover>();
+            mover.Spline = spline;
+            mover.Speed = 0.22f;
+            mover.Mode = SplinePathMover.LoopMode.PingPong;
+            // 探照灯环境低频（GDD 听觉雷达）
+            var amb = root.AddComponent<AudioSource>();
+            amb.clip = clips.Ambient; amb.loop = true; amb.playOnAwake = true;
+            amb.spatialBlend = 1f; amb.volume = 0.5f; amb.minDistance = 4f; amb.maxDistance = 30f;
+
+            // 子：聚光灯（朝下）
             var spot = new GameObject("Spot");
-            spot.transform.SetParent(lightOrigin.transform, false);
+            spot.transform.SetParent(root.transform, false);
+            spot.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             var spotLight = spot.AddComponent<Light>();
             spotLight.type = LightType.Spot;
-            spotLight.range = 18f; spotLight.spotAngle = 60f; spotLight.intensity = 14f;
+            spotLight.range = 18f; spotLight.spotAngle = 55f; spotLight.intensity = 14f;
             spotLight.color = new Color(1f, 0.25f, 0.25f);
-            spot.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
 
-            // 致死触发区（x:38~52）
+            // 子：致死光斑（随根移动）
             var killGo = new GameObject("ScanField_KillZone");
-            killGo.transform.position = new Vector3(45f, 2.5f, 0f);
+            killGo.transform.SetParent(root.transform, false);
+            killGo.transform.localPosition = new Vector3(0f, -5.5f, 0f); // 根 y=8 → 致死区中心 y=2.5
             var killCol = killGo.AddComponent<BoxCollider>();
             killCol.isTrigger = true;
-            killCol.size = new Vector3(14f, 5f, 6f);
+            killCol.size = new Vector3(6f, 5f, 6f);
             var scan = killGo.AddComponent<ScanField>();
-            scan.LightOrigin = lightOrigin.transform;
+            scan.LightOrigin = root.transform;
             scan.RotateSpeed = 0f;
             scan.CoverMask = 1 << coverLayer;
             scan.Source = "Searchlight";
@@ -87,9 +111,13 @@ namespace Inkform.EditorTools
             scan.LightIntensity = 14f;
             scan.LightRange = 18f;
 
-            // 红色危险视觉：地面警示带 + 探照光柱（脉动）
-            MakeDanger("DangerStrip", new Vector3(45f, 0.06f, 0f), new Vector3(14f, 0.12f, 6f));
-            MakeDanger("DangerBeam", new Vector3(45f, 4f, 0f), new Vector3(2f, 8f, 2f));
+            // 子：红色脉动光柱（随根移动，显示当前扫描位置）
+            var beam = MakeDanger("DangerBeam", Vector3.zero, new Vector3(2f, 8f, 2f));
+            beam.transform.SetParent(root.transform, false);
+            beam.transform.localPosition = new Vector3(0f, -4f, 0f);
+
+            // 静态地面警示带：标示整条危险走廊
+            MakeDanger("DangerStrip", new Vector3(42.5f, 0.06f, 0f), new Vector3(19f, 0.12f, 6f));
 
             // 掩体棚（Cover 层）：玩家在棚下被遮挡 → 豁免
             MakeBox("CoverCanopy", new Vector3(46f, 3.5f, 0f), new Vector3(9f, 0.4f, 4f), coverLayer, new Color(0.25f, 0.5f, 0.3f));
@@ -106,6 +134,17 @@ namespace Inkform.EditorTools
             var input = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
             if (input == null) Debug.LogWarning($"[M1SceneBuilder] 未找到输入资产 {InputAssetPath}，请手动给 InputReader.Actions 赋值。");
             var player = BuildPlayer(playerLayer, input);
+            player.GetComponent<PlayerMotor>().FootstepSource.clip = clips.Footstep;
+
+            // 事件音效管理 + 占位音
+            var audioGo = new GameObject("AudioManager");
+            var sfx = audioGo.AddComponent<AudioSource>();
+            sfx.playOnAwake = false; sfx.spatialBlend = 0f;
+            var am = audioGo.AddComponent<AudioManager>();
+            am.SfxSource = sfx;
+            am.ScanClip = clips.Scan; am.RevertClip = clips.Revert; am.AbilityClip = clips.Ability;
+            am.JumpClip = clips.Jump; am.LandClip = clips.Land; am.DeathClip = clips.Death;
+            am.RespawnClip = clips.Respawn; am.CheckpointClip = clips.Checkpoint; am.CompleteClip = clips.Complete;
 
             // 管理根
             new GameObject("ManagerRoot").AddComponent<ManagerRoot>();
@@ -168,6 +207,11 @@ namespace Inkform.EditorTools
             visual.BodyRoot = body.transform;
             visual.CoreColor = CoreColor;
 
+            // 脚步循环音源（clip 由 Build() 赋占位）
+            var foot = player.AddComponent<AudioSource>();
+            foot.loop = true; foot.playOnAwake = false; foot.spatialBlend = 0f; foot.volume = 0.4f;
+            motor.FootstepSource = foot;
+
             var actor = player.AddComponent<PlayerActor>();
             actor.Input = reader;
             return player;
@@ -175,7 +219,7 @@ namespace Inkform.EditorTools
 
         // ───────────────────────── 危险视觉 / EXIT ─────────────────────────
 
-        static void MakeDanger(string name, Vector3 pos, Vector3 scale)
+        static GameObject MakeDanger(string name, Vector3 pos, Vector3 scale)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = name;
@@ -185,6 +229,7 @@ namespace Inkform.EditorTools
             var r = go.GetComponent<Renderer>();
             r.sharedMaterial = MakeTransparentMat(new Color(1f, 0.15f, 0.15f, 0.35f));
             go.AddComponent<DangerPulse>();
+            return go;
         }
 
         static void BuildExit(Vector3 pos)

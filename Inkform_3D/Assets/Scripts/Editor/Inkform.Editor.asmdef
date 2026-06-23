@@ -7,8 +7,11 @@
         "Inkform.Gameplay",
         "Inkform.UI",
         "Inkform.Camera",
+        "Inkform.Audio",
         "Unity.Cinemachine",
         "Unity.InputSystem",
+        "Unity.Splines",
+        "Unity.Mathematics",
         "UnityEngine.UI",
         "UniTask"
     ],

@@ -1,14 +1,8 @@
 {
-    "name": "Inkform.Gameplay",
-    "rootNamespace": "Inkform.Gameplay",
+    "name": "Inkform.Audio",
+    "rootNamespace": "Inkform.Audio",
     "references": [
-        "Inkform.Core",
-        "Inkform.Data",
-        "Inkform.UI",
-        "Unity.InputSystem",
-        "Unity.Splines",
-        "Unity.Mathematics",
-        "UniTask"
+        "Inkform.Core"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
