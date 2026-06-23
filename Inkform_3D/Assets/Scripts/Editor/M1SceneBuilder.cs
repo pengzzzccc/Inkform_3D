@@ -27,12 +27,14 @@ namespace Inkform.EditorTools
         const string ScenePath = "Assets/Scenes/M1_TestScene.unity";
         const string DataFolder = "Assets/Data";
         const string AnchorPath = DataFolder + "/S_AnchorForm.asset";
-        const string LightPath = DataFolder + "/S_LightForm.asset";
+        const string RemotePath = DataFolder + "/S_RemoteForm.asset";
+        const string TeleportPath = DataFolder + "/S_TeleportForm.asset";
         const string InputAssetPath = "Assets/InputSystem_Actions.inputactions";
 
         static readonly Color CoreColor = new Color(0.10f, 0.10f, 0.14f);
 
         [MenuItem("Inkform/M1/Build M1 Test Scene")]
+        [MenuItem("Inkform/M2/Build M2 Scene")]
         public static void Build()
         {
             int playerLayer = EnsureLayer("Player");
@@ -43,9 +45,12 @@ namespace Inkform.EditorTools
             var anchorCfg = EnsureForm(AnchorPath, FormId.Anchor, "船锚",
                 new MovementProfile { MoveSpeedMul = 0.45f, MassMul = 3f, JumpHeightMul = 0.3f, Buoyancy = -8f, Drag = 0.4f, CanJump = true },
                 new Color(1f, 0.55f, 0.2f), new Vector3(1.3f, 0.6f, 1.3f));
-            var lightCfg = EnsureForm(LightPath, FormId.Light, "轻形态",
-                new MovementProfile { MoveSpeedMul = 1.4f, MassMul = 0.5f, JumpHeightMul = 1.8f, Buoyancy = 0f, Drag = 0f, CanJump = true },
-                new Color(0.4f, 0.8f, 1f), new Vector3(0.8f, 1.4f, 0.8f));
+            var remoteCfg = EnsureForm(RemotePath, FormId.Remote, "遥控",
+                new MovementProfile { MoveSpeedMul = 1f, MassMul = 1f, JumpHeightMul = 1f, Buoyancy = 0f, Drag = 0f, CanJump = true },
+                new Color(0.4f, 0.8f, 1f), new Vector3(1f, 1f, 1f));
+            var teleportCfg = EnsureForm(TeleportPath, FormId.Teleport, "传送",
+                new MovementProfile { MoveSpeedMul = 1.1f, MassMul = 0.8f, JumpHeightMul = 1.1f, Buoyancy = 0f, Drag = 0f, CanJump = true },
+                new Color(0.7f, 0.45f, 1f), new Vector3(0.9f, 1.2f, 0.9f));
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -56,14 +61,14 @@ namespace Inkform.EditorTools
             sunLight.intensity = 0.7f;
             sun.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
 
-            // 地面 + 背墙
-            MakeBox("Ground", new Vector3(27f, -0.5f, 0f), new Vector3(64f, 1f, 8f), 0, new Color(0.18f, 0.2f, 0.24f));
-            MakeBox("BackWall", new Vector3(27f, 3f, 4.6f), new Vector3(64f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f));
-            MakeBox("FrontWall", new Vector3(27f, 3f, -4.6f), new Vector3(64f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f)); // 防 WASD 前后走出地面
+            // 地面（A/B 段一整条）+ 前后墙（延伸覆盖到 D 段）
+            MakeBox("Ground_AB", new Vector3(25.5f, -0.5f, 0f), new Vector3(67f, 1f, 8f), 0, new Color(0.18f, 0.2f, 0.24f));
+            MakeBox("BackWall", new Vector3(57f, 3f, 4.6f), new Vector3(132f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f));
+            MakeBox("FrontWall", new Vector3(57f, 3f, -4.6f), new Vector3(132f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f)); // 防 WASD 前后走出地面
 
             // A 段：扫描目标（颜色取自形态）+ 矮坎
-            MakeScanTarget("ScanTarget_Light", new Vector3(8f, 0.6f, 0f), lightCfg);
-            MakeScanTarget("ScanTarget_Anchor", new Vector3(13f, 0.6f, 0f), anchorCfg);
+            MakeScanTarget("ScanTarget_Anchor", new Vector3(8f, 0.6f, 0f), anchorCfg);
+            MakeScanTarget("ScanTarget_Teleport", new Vector3(14f, 0.6f, 0f), teleportCfg);
             MakeBox("Ledge", new Vector3(19f, 0.5f, 0f), new Vector3(1.2f, 1.0f, 6f), 0, new Color(0.3f, 0.32f, 0.36f));
 
             // B 段：沿样条移动的探照灯（整组）+ 致死区 + 红色危险视觉 + 掩体棚
@@ -122,13 +127,21 @@ namespace Inkform.EditorTools
             // 掩体棚（Cover 层）：玩家在棚下被遮挡 → 豁免
             MakeBox("CoverCanopy", new Vector3(46f, 3.5f, 0f), new Vector3(9f, 0.4f, 4f), coverLayer, new Color(0.25f, 0.5f, 0.3f));
 
-            // 终点（到达即通关）
-            BuildExit(new Vector3(46f, 0.6f, 0f));
+            // C 水闸段（船锚）+ D 吊臂段（遥控）+ F 清扫者高潮段（传送）
+            BuildSectionC(anchorCfg, clips);
+            BuildSectionD(remoteCfg, clips);
+            var fZone = BuildSectionF(teleportCfg, coverLayer, clips);
+
+            // 终点（F 段之后，到达即通关）
+            BuildExit(new Vector3(119f, 0.6f, 0f));
 
             // 检查点（含编辑器 Gizmos + 运行时标记）
             MakeCheckpoint("Checkpoint_0", 0, new Vector3(2f, 1f, 0f));
             MakeCheckpoint("Checkpoint_1", 1, new Vector3(24f, 1f, 0f));
             MakeCheckpoint("Checkpoint_2", 2, new Vector3(36f, 1f, 0f));
+            MakeCheckpoint("Checkpoint_3", 3, new Vector3(55f, 1f, 0f));
+            MakeCheckpoint("Checkpoint_4", 4, new Vector3(71f, 1f, 0f));
+            MakeCheckpoint("Checkpoint_5", 5, new Vector3(93f, 1f, 0f));
 
             // 玩家（根不缩放，子 Body 承担形态视觉缩放）
             var input = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
@@ -145,6 +158,7 @@ namespace Inkform.EditorTools
             am.ScanClip = clips.Scan; am.RevertClip = clips.Revert; am.AbilityClip = clips.Ability;
             am.JumpClip = clips.Jump; am.LandClip = clips.Land; am.DeathClip = clips.Death;
             am.RespawnClip = clips.Respawn; am.CheckpointClip = clips.Checkpoint; am.CompleteClip = clips.Complete;
+            am.PuzzleClip = clips.Puzzle; am.TeleportClip = clips.Teleport; am.DeathClip = clips.Death;
 
             // 管理根
             new GameObject("ManagerRoot").AddComponent<ManagerRoot>();
@@ -161,7 +175,8 @@ namespace Inkform.EditorTools
             cpSys.Fader = fader;
             cpSys.FadeDuration = 0.35f;
 
-            BuildCamera(player.transform);
+            var fVcam = BuildCamera(player.transform);
+            if (fZone != null) fZone.Cam = fVcam;
 
             EnsureFolder("Assets/Scenes");
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -353,7 +368,8 @@ namespace Inkform.EditorTools
 
         // ───────────────────────── 镜头 ─────────────────────────
 
-        static void BuildCamera(Transform target)
+        /// <summary>建主跟随 vcam + F 大厅拉远 vcam，返回 F vcam 供 CameraZone 切换。</summary>
+        static CinemachineCamera BuildCamera(Transform target)
         {
             var camGo = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
             camGo.tag = "MainCamera";
@@ -361,10 +377,12 @@ namespace Inkform.EditorTools
             camGo.AddComponent<CinemachineBrain>();
             camGo.transform.position = new Vector3(2f, 4f, -12f);
 
+            // 主跟随机位（中等优先级）
             var vcamGo = new GameObject("CM Player Cam");
             var vcam = vcamGo.AddComponent<CinemachineCamera>();
             vcamGo.transform.position = new Vector3(2f, 4f, -12f);
             vcam.Follow = target;
+            vcam.Priority = 10;
             var follow = vcamGo.AddComponent<CinemachineFollow>();
             follow.FollowOffset = new Vector3(0f, 3f, -12f);
 
@@ -374,6 +392,18 @@ namespace Inkform.EditorTools
             director.Target = target;
             director.FollowOffset = new Vector3(0f, 3f, -12f);
             director.FieldOfView = 50f;
+
+            // F 大厅拉远机位（默认低优先级，由 CameraZone 进区提升）
+            var fGo = new GameObject("CM Hall Cam");
+            var fVcam = fGo.AddComponent<CinemachineCamera>();
+            fGo.transform.position = new Vector3(106f, 7f, -22f);
+            fVcam.Follow = target;
+            fVcam.Priority = 0;
+            var fLens = fVcam.Lens; fLens.FieldOfView = 62f; fVcam.Lens = fLens;
+            var fFollow = fGo.AddComponent<CinemachineFollow>();
+            fFollow.FollowOffset = new Vector3(0f, 6f, -22f);
+
+            return fVcam;
         }
 
         // ───────────────────────── 基础 helper ─────────────────────────
@@ -403,6 +433,146 @@ namespace Inkform.EditorTools
             bc.isTrigger = true;
             bc.size = new Vector3(3.2f, 3f, 3f);
             trig.AddComponent<ScanTarget>().Config = cfg;
+        }
+
+        // ───────────────────────── C / D 谜题段 ─────────────────────────
+
+        static void BuildSectionC(S_AbilityConfig anchorCfg, PlaceholderAudioGenerator.Clips clips)
+        {
+            // 池底（低于地面）+ 出池地面
+            MakeBox("Pool_Floor", new Vector3(63f, -2f, 0f), new Vector3(8f, 1f, 7f), 0, new Color(0.14f, 0.16f, 0.2f));
+            MakeBox("Ground_C", new Vector3(68.5f, -0.5f, 0f), new Vector3(4f, 1f, 8f), 0, new Color(0.18f, 0.2f, 0.24f));
+
+            // 水体 + 水面视觉
+            var waterGo = new GameObject("WaterVolume");
+            waterGo.transform.position = new Vector3(63f, -0.4f, 0f);
+            var wcol = waterGo.AddComponent<BoxCollider>();
+            wcol.isTrigger = true; wcol.size = new Vector3(8f, 2.4f, 7f);
+            var water = waterGo.AddComponent<WaterVolume>();
+            water.Buoyancy = 14f; water.DrainDrop = 2.5f; water.DrainDuration = 1.2f;
+
+            var surface = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            surface.name = "WaterSurface";
+            Object.DestroyImmediate(surface.GetComponent<Collider>());
+            surface.transform.SetParent(waterGo.transform, false);
+            surface.transform.localPosition = new Vector3(0f, 0.4f, 0f); // 世界 y≈0
+            surface.transform.localScale = new Vector3(8f, 0.1f, 7f);
+            surface.GetComponent<Renderer>().sharedMaterial = MakeTransparentMat(new Color(0.2f, 0.5f, 0.9f, 0.45f));
+            water.WaterSurface = surface.transform;
+
+            // 水闸门（挡对岸出口，valve 激活时下沉移开）
+            var gateGo = MakeBox("SluiceGate", new Vector3(66.5f, 1.6f, 0f), new Vector3(0.6f, 3.6f, 7f), 0, new Color(0.3f, 0.34f, 0.4f));
+            var gate = gateGo.AddComponent<SimpleGate>();
+            gate.OpenOffset = new Vector3(0f, -4f, 0f);
+
+            // 水闸阀（池底，仅船锚沉到此触发）
+            var valveGo = new GameObject("SluiceValve");
+            valveGo.transform.position = new Vector3(63f, -1.2f, 0f);
+            var vcol = valveGo.AddComponent<BoxCollider>();
+            vcol.isTrigger = true; vcol.size = new Vector3(6f, 1f, 6f);
+            var valve = valveGo.AddComponent<SluiceValve>();
+            valve.Water = water; valve.Gate = gate;
+            var vsfx = valveGo.AddComponent<AudioSource>();
+            vsfx.clip = clips.Valve; vsfx.playOnAwake = false; vsfx.spatialBlend = 1f;
+            valve.Sfx = vsfx;
+
+            MakeBox("ValveMark", new Vector3(63f, -1.45f, 0f), new Vector3(1.5f, 0.3f, 1.5f), 0, new Color(1f, 0.8f, 0.2f));
+
+            // 入口处船锚扫描目标
+            MakeScanTarget("ScanTarget_Anchor_C", new Vector3(57f, 0.6f, 0f), anchorCfg);
+
+            var puzzle = new GameObject("Puzzle_C").AddComponent<PuzzleController>();
+            puzzle.PuzzleId = 100;
+            puzzle.Mechanisms.Add(valve);
+        }
+
+        static void BuildSectionD(S_AbilityConfig remoteCfg, PlaceholderAudioGenerator.Clips clips)
+        {
+            MakeBox("Ground_D1", new Vector3(72f, -0.5f, 0f), new Vector3(5f, 1f, 8f), 0, new Color(0.18f, 0.2f, 0.24f));
+            MakeBox("Ground_D2", new Vector3(85f, -0.5f, 0f), new Vector3(12f, 1f, 8f), 0, new Color(0.18f, 0.2f, 0.24f));
+
+            // 缺口下方致死区（掉落即死）
+            var killGo = new GameObject("FallKill");
+            killGo.transform.position = new Vector3(76.5f, -6f, 0f);
+            var kcol = killGo.AddComponent<BoxCollider>();
+            kcol.isTrigger = true; kcol.size = new Vector3(10f, 4f, 10f);
+            killGo.AddComponent<KillVolume>();
+
+            // 可遥控集装箱（侧边待命，遥控 Operate 移到缺口搭桥）
+            var cont = MakeBox("MovableContainer", new Vector3(72f, 0.6f, 2.8f), new Vector3(5.5f, 1.2f, 2.4f), 0, new Color(0.5f, 0.42f, 0.3f));
+            var mc = cont.AddComponent<MovableContainer>();
+            mc.BridgeOffset = new Vector3(4.5f, -0.1f, -2.8f); // 移到缺口中 (76.5,0.5,0)
+            mc.MoveDuration = 1.0f;
+            var csfx = cont.AddComponent<AudioSource>();
+            csfx.clip = clips.Bridge; csfx.playOnAwake = false; csfx.spatialBlend = 1f;
+            mc.Sfx = csfx;
+
+            MakeScanTarget("ScanTarget_Remote", new Vector3(71f, 0.6f, 0f), remoteCfg);
+
+            var puzzle = new GameObject("Puzzle_D").AddComponent<PuzzleController>();
+            puzzle.PuzzleId = 101;
+            puzzle.Mechanisms.Add(mc);
+        }
+
+        static CameraZone BuildSectionF(S_AbilityConfig teleportCfg, int coverLayer, PlaceholderAudioGenerator.Clips clips)
+        {
+            // 大厅地面
+            MakeBox("Ground_F", new Vector3(106f, -0.5f, 0f), new Vector3(30f, 1f, 8f), 0, new Color(0.16f, 0.18f, 0.22f));
+
+            // 入口：传送扫描目标 + 安全死角掩体（设标记/躲清扫者）
+            MakeScanTarget("ScanTarget_Teleport_F", new Vector3(94f, 0.6f, 0f), teleportCfg);
+            MakeBox("SafeCover", new Vector3(98f, 1.5f, 2.5f), new Vector3(2f, 3f, 2f), coverLayer, new Color(0.25f, 0.45f, 0.3f));
+
+            // 清扫者（纯视觉块 + 随行致死 ScanField，周期掠过）
+            var sweeper = MakeBox("Sweeper", new Vector3(100f, 3f, 0f), new Vector3(3f, 5f, 8f), 0, new Color(0.07f, 0.05f, 0.1f));
+            Object.DestroyImmediate(sweeper.GetComponent<Collider>()); // 纯视觉，致死靠 Hazard
+
+            var hazard = new GameObject("Hazard");
+            hazard.transform.SetParent(sweeper.transform, false);
+            hazard.transform.localPosition = new Vector3(0f, -2.5f, 0f);
+            var hcol = hazard.AddComponent<BoxCollider>();
+            hcol.isTrigger = true; hcol.size = new Vector3(4f, 5f, 8f);
+            var hscan = hazard.AddComponent<ScanField>();
+            hscan.LightOrigin = sweeper.transform; hscan.RotateSpeed = 0f;
+            hscan.CoverMask = 1 << coverLayer; hscan.Source = "Sweeper";
+
+            var hdanger = MakeDanger("SweeperDanger", Vector3.zero, new Vector3(4f, 5f, 8f));
+            hdanger.transform.SetParent(sweeper.transform, false);
+            hdanger.transform.localPosition = new Vector3(0f, -2.5f, 0f);
+
+            var sc = sweeper.AddComponent<SweeperController>();
+            sc.StartPos = new Vector3(100f, 3f, 0f);
+            sc.EndPos = new Vector3(114f, 3f, 0f);
+            sc.SweepDuration = 5.5f; sc.WaitDuration = 3f; sc.Hazard = hazard;
+            var ssfx = sweeper.AddComponent<AudioSource>();
+            ssfx.clip = clips.Sweeper; ssfx.loop = true; ssfx.playOnAwake = true;
+            ssfx.spatialBlend = 1f; ssfx.minDistance = 5f; ssfx.maxDistance = 40f; ssfx.volume = 0f;
+            sc.ApproachSfx = ssfx;
+
+            // 出口门（被远端开关打开）
+            var gateGo = MakeBox("ExitGate", new Vector3(117f, 1.75f, 0f), new Vector3(0.6f, 3.6f, 8f), 0, new Color(0.3f, 0.34f, 0.4f));
+            var gate = gateGo.AddComponent<SimpleGate>();
+            gate.OpenOffset = new Vector3(0f, -4f, 0f);
+
+            var switchGo = MakeBox("GoalSwitch", new Vector3(114.5f, 0.6f, 0f), new Vector3(1.5f, 1.2f, 1.5f), 0, new Color(1f, 0.85f, 0.2f));
+            var ts = switchGo.AddComponent<TriggerSwitch>();
+            ts.Gate = gate;
+            var tsfx = switchGo.AddComponent<AudioSource>();
+            tsfx.clip = clips.Puzzle; tsfx.playOnAwake = false; tsfx.spatialBlend = 1f;
+            ts.Sfx = tsfx;
+
+            var puzzleF = new GameObject("Puzzle_F").AddComponent<PuzzleController>();
+            puzzleF.PuzzleId = 102;
+            puzzleF.Mechanisms.Add(ts);
+
+            // 镜头切换区（覆盖整个 F 大厅，进区切到拉远机位）
+            var zoneGo = new GameObject("CameraZone_F");
+            zoneGo.transform.position = new Vector3(106f, 2f, 0f);
+            var zcol = zoneGo.AddComponent<BoxCollider>();
+            zcol.isTrigger = true; zcol.size = new Vector3(30f, 6f, 10f);
+            var zone = zoneGo.AddComponent<CameraZone>();
+            zone.ActivePriority = 20; zone.InactivePriority = 0;
+            return zone;
         }
 
         static void SetColor(GameObject go, Color color)

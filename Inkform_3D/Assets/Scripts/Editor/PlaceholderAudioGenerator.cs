@@ -17,6 +17,8 @@ namespace Inkform.EditorTools
         public struct Clips
         {
             public AudioClip Scan, Revert, Ability, Jump, Land, Death, Respawn, Checkpoint, Complete, Footstep, Ambient;
+            public AudioClip Valve, Bridge, Puzzle, Teleport;
+            public AudioClip Sweeper, Alarm;
         }
 
         [MenuItem("Inkform/M1/Generate Placeholder Audio")]
@@ -43,6 +45,12 @@ namespace Inkform.EditorTools
                 Complete   = EnsureClip("sfx_complete", 1320f, 0.6f),
                 Footstep   = EnsureClip("sfx_footstep", 300f, 0.12f),
                 Ambient    = EnsureClip("amb_searchlight", 70f, 2f),
+                Valve      = EnsureClip("sfx_valve", 240f, 0.4f),
+                Bridge     = EnsureClip("sfx_bridge", 200f, 0.5f),
+                Puzzle     = EnsureClip("sfx_puzzle", 1100f, 0.4f),
+                Teleport   = EnsureClip("sfx_teleport", 1500f, 0.2f),
+                Sweeper    = EnsureClip("amb_sweeper", 50f, 2.5f),
+                Alarm      = EnsureClip("sfx_alarm", 1700f, 0.5f),
             };
         }
 

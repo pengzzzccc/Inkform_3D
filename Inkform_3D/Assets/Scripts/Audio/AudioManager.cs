@@ -20,6 +20,8 @@ namespace Inkform.Audio
         public AudioClip RespawnClip;    // 重生
         public AudioClip CheckpointClip; // 抵达检查点
         public AudioClip CompleteClip;   // 通关
+        public AudioClip PuzzleClip;     // 谜题解开
+        public AudioClip TeleportClip;   // 传送瞬移
 
         public AudioSource SfxSource;
 
@@ -39,6 +41,7 @@ namespace Inkform.Audio
             EventBus.Subscribe<OnRespawn>(OnRespawn);
             EventBus.Subscribe<CheckpointReached>(OnCheckpoint);
             EventBus.Subscribe<LevelCompleted>(OnComplete);
+            EventBus.Subscribe<PuzzleSolved>(OnPuzzle);
         }
 
         void OnDisable()
@@ -52,6 +55,7 @@ namespace Inkform.Audio
             EventBus.Unsubscribe<OnRespawn>(OnRespawn);
             EventBus.Unsubscribe<CheckpointReached>(OnCheckpoint);
             EventBus.Unsubscribe<LevelCompleted>(OnComplete);
+            EventBus.Unsubscribe<PuzzleSolved>(OnPuzzle);
         }
 
         void Play(AudioClip clip)
@@ -61,7 +65,8 @@ namespace Inkform.Audio
 
         void OnScan(FormMaterialized _) => Play(ScanClip);
         void OnRevert(FormDissolved _) => Play(RevertClip);
-        void OnAbility(AbilityUsed _) => Play(AbilityClip);
+        void OnAbility(AbilityUsed e) => Play(e.Form == FormId.Teleport ? TeleportClip : AbilityClip);
+        void OnPuzzle(PuzzleSolved _) => Play(PuzzleClip);
         void OnJump(Jumped _) => Play(JumpClip);
         void OnLand(Landed _) => Play(LandClip);
         void OnDeath(PlayerKilled _) => Play(DeathClip);

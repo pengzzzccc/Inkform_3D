@@ -23,4 +23,7 @@ namespace Inkform.Core
     // ── 玩家动作（供音效等订阅）──
     public struct Jumped { }
     public struct Landed { }
+
+    // ── 机关 / 谜题 ──
+    public struct PuzzleSolved { public int Id; }
 }

@@ -10,17 +10,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a27e89ae43d59d945821206d30e97844, type: 3}
-  m_Name: S_LightForm
+  m_Name: S_TeleportForm
   m_EditorClassIdentifier: Inkform.Data::Inkform.Data.S_AbilityConfig
-  Form: 2
-  DisplayName: "\u8F7B\u5F62\u6001"
+  Form: 3
+  DisplayName: "\u4F20\u9001"
   Movement:
-    MoveSpeedMul: 1.4
-    MassMul: 0.5
-    JumpHeightMul: 1.8
+    MoveSpeedMul: 1.1
+    MassMul: 0.8
+    JumpHeightMul: 1.1
     Buoyancy: 0
     Drag: 0
     CanJump: 1
-  BodyColor: {r: 0.4, g: 0.8, b: 1, a: 1}
-  BodyScale: {x: 0.8, y: 1.4, z: 0.8}
+  BodyColor: {r: 0.7, g: 0.45, b: 1, a: 1}
+  BodyScale: {x: 0.9, y: 1.2, z: 0.9}
   Icon: {fileID: 0}

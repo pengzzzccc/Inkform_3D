@@ -53,9 +53,10 @@ namespace Inkform.Gameplay
         {
             switch (c.Form)
             {
-                case FormId.Anchor: return new AnchorForm(c);
-                case FormId.Light:  return new LightForm(c);
-                default:            return new LightForm(c); // M1 兜底
+                case FormId.Remote:   return new RemoteForm(c);
+                case FormId.Anchor:   return new AnchorForm(c);
+                case FormId.Teleport: return new TeleportForm(c);
+                default:              return new AnchorForm(c); // 兜底
             }
         }
     }
