@@ -26,4 +26,7 @@ namespace Inkform.Core
 
     // ── 机关 / 谜题 ──
     public struct PuzzleSolved { public int Id; }
+
+    // ── 能力瞄准提示（操控类能力靠近可操作目标时）──
+    public struct AbilityTargetInRange { public bool HasTarget; public string Hint; }
 }

@@ -24,7 +24,8 @@ namespace Inkform.Gameplay
             _ability = GetComponent<AbilitySystem>();
             var rb = GetComponent<Rigidbody>();
             var visual = GetComponent<PlayerFormVisual>();
-            _ctx = new PlayerContext(transform, rb, _motor, visual);
+            var glow = GetComponentInChildren<Light>(true); // 灯泡形态发光（默认关）
+            _ctx = new PlayerContext(transform, rb, _motor, visual, glow);
             _ability.Init(_ctx);
         }
 

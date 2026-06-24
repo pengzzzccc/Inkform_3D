@@ -10,8 +10,9 @@ namespace Inkform.UI
     /// </summary>
     public class InteractionPromptUI : MonoBehaviour
     {
-        public Text PromptText; // 常驻提示（靠近时）
-        public Text ToastText;  // 短暂反馈
+        public Text PromptText;        // 常驻提示（靠近扫描目标时）
+        public Text AbilityPromptText; // 操控类能力的瞄准提示（[左键] 操控…）
+        public Text ToastText;         // 短暂反馈
         public float ToastDuration = 1.2f;
 
         float _toastUntil;
@@ -19,6 +20,7 @@ namespace Inkform.UI
         void Awake()
         {
             if (PromptText != null) PromptText.text = "";
+            if (AbilityPromptText != null) AbilityPromptText.text = "";
             if (ToastText != null) ToastText.text = "";
         }
 
@@ -27,6 +29,7 @@ namespace Inkform.UI
             EventBus.Subscribe<NearbyScanTargetChanged>(OnNearby);
             EventBus.Subscribe<TargetScanned>(OnScanned);
             EventBus.Subscribe<FormDissolved>(OnDissolved);
+            EventBus.Subscribe<AbilityTargetInRange>(OnAbilityTarget);
         }
 
         void OnDisable()
@@ -34,6 +37,12 @@ namespace Inkform.UI
             EventBus.Unsubscribe<NearbyScanTargetChanged>(OnNearby);
             EventBus.Unsubscribe<TargetScanned>(OnScanned);
             EventBus.Unsubscribe<FormDissolved>(OnDissolved);
+            EventBus.Unsubscribe<AbilityTargetInRange>(OnAbilityTarget);
+        }
+
+        void OnAbilityTarget(AbilityTargetInRange e)
+        {
+            if (AbilityPromptText != null) AbilityPromptText.text = e.HasTarget ? e.Hint : "";
         }
 
         void OnNearby(NearbyScanTargetChanged e)

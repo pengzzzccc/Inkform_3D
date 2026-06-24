@@ -19,6 +19,7 @@ namespace Inkform.EditorTools
             public AudioClip Scan, Revert, Ability, Jump, Land, Death, Respawn, Checkpoint, Complete, Footstep, Ambient;
             public AudioClip Valve, Bridge, Puzzle, Teleport;
             public AudioClip Sweeper, Alarm;
+            public AudioClip Power, Magnet, Balloon, Ending;
         }
 
         [MenuItem("Inkform/M1/Generate Placeholder Audio")]
@@ -53,6 +54,10 @@ namespace Inkform.EditorTools
                 Teleport   = EnsureClip("sfx_teleport", 622f, 0.2f, false, force),
                 Sweeper    = EnsureClip("amb_sweeper", 44f, 2.5f, true, force),
                 Alarm      = EnsureClip("sfx_alarm", 440f, 0.4f, false, force),
+                Power      = EnsureClip("sfx_power", 330f, 0.35f, false, force),
+                Magnet     = EnsureClip("sfx_magnet", 196f, 0.3f, false, force),
+                Balloon    = EnsureClip("sfx_balloon", 494f, 0.25f, false, force),
+                Ending     = EnsureClip("sfx_ending", 392f, 1.2f, false, force),
             };
         }
 

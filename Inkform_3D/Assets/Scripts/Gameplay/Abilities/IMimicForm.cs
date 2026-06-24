@@ -12,5 +12,8 @@ namespace Inkform.Gameplay
         void OnDissolve(PlayerContext ctx);    // 还原回基态
         void OnUse(PlayerContext ctx);         // “使用能力”输入触发
         void Tick(PlayerContext ctx, float dt);
+
+        /// <summary>当前是否有可操作目标在范围内，返回提示文本（null=无）。用于操控类能力的瞄准提示。</summary>
+        string AimHint(PlayerContext ctx);
     }
 }

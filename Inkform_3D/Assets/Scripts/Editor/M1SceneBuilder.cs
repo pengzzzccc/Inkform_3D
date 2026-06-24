@@ -2,7 +2,10 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.Splines;
+using UnityEngine.Timeline;
+using UnityEngine.Playables;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -29,10 +32,14 @@ namespace Inkform.EditorTools
         const string AnchorPath = DataFolder + "/S_AnchorForm.asset";
         const string RemotePath = DataFolder + "/S_RemoteForm.asset";
         const string TeleportPath = DataFolder + "/S_TeleportForm.asset";
+        const string BulbPath = DataFolder + "/S_BulbForm.asset";
+        const string MagnetPath = DataFolder + "/S_MagnetForm.asset";
+        const string BalloonPath = DataFolder + "/S_BalloonForm.asset";
         const string InputAssetPath = "Assets/InputSystem_Actions.inputactions";
 
         static readonly Color CoreColor = new Color(0.10f, 0.10f, 0.14f);
 
+        [MenuItem("Inkform/Build Full Scene (A-H)")]
         [MenuItem("Inkform/M1/Build M1 Test Scene")]
         [MenuItem("Inkform/M2/Build M2 Scene")]
         public static void Build()
@@ -51,6 +58,15 @@ namespace Inkform.EditorTools
             var teleportCfg = EnsureForm(TeleportPath, FormId.Teleport, "传送",
                 new MovementProfile { MoveSpeedMul = 1.1f, MassMul = 0.8f, JumpHeightMul = 1.1f, Buoyancy = 0f, Drag = 0f, CanJump = true },
                 new Color(0.7f, 0.45f, 1f), new Vector3(0.9f, 1.2f, 0.9f));
+            var bulbCfg = EnsureForm(BulbPath, FormId.Bulb, "灯泡·电池",
+                new MovementProfile { MoveSpeedMul = 1f, MassMul = 1f, JumpHeightMul = 1f, Buoyancy = 0f, Drag = 0f, CanJump = true },
+                new Color(1f, 0.9f, 0.4f), new Vector3(1f, 1f, 1f));
+            var magnetCfg = EnsureForm(MagnetPath, FormId.Magnet, "磁铁",
+                new MovementProfile { MoveSpeedMul = 0.8f, MassMul = 1.5f, JumpHeightMul = 0.8f, Buoyancy = 0f, Drag = 0.2f, CanJump = true },
+                new Color(0.6f, 0.3f, 0.3f), new Vector3(1.1f, 0.9f, 1.1f));
+            var balloonCfg = EnsureForm(BalloonPath, FormId.Balloon, "气球",
+                new MovementProfile { MoveSpeedMul = 1.1f, MassMul = 0.3f, JumpHeightMul = 2f, Buoyancy = 11f, Drag = 1.2f, CanJump = true },
+                new Color(0.95f, 0.5f, 0.7f), new Vector3(1.4f, 1.5f, 1.4f));
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -63,8 +79,8 @@ namespace Inkform.EditorTools
 
             // 地面（A/B 段一整条）+ 前后墙（延伸覆盖到 D 段）
             MakeBox("Ground_AB", new Vector3(25.5f, -0.5f, 0f), new Vector3(67f, 1f, 8f), 0, new Color(0.18f, 0.2f, 0.24f));
-            MakeBox("BackWall", new Vector3(57f, 3f, 4.6f), new Vector3(132f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f));
-            MakeBox("FrontWall", new Vector3(57f, 3f, -4.6f), new Vector3(132f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f)); // 防 WASD 前后走出地面
+            MakeBox("BackWall", new Vector3(86f, 3f, 4.6f), new Vector3(190f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f));
+            MakeBox("FrontWall", new Vector3(86f, 3f, -4.6f), new Vector3(190f, 8f, 0.4f), 0, new Color(0.12f, 0.13f, 0.16f)); // 防 WASD 前后走出地面
 
             // A 段：扫描目标（颜色取自形态）+ 矮坎
             MakeScanTarget("ScanTarget_Anchor", new Vector3(8f, 0.6f, 0f), anchorCfg);
@@ -127,13 +143,13 @@ namespace Inkform.EditorTools
             // 掩体棚（Cover 层）：玩家在棚下被遮挡 → 豁免
             MakeBox("CoverCanopy", new Vector3(46f, 3.5f, 0f), new Vector3(9f, 0.4f, 4f), coverLayer, new Color(0.25f, 0.5f, 0.3f));
 
-            // C 水闸段（船锚）+ D 吊臂段（遥控）+ F 清扫者高潮段（传送）
+            // C 水闸 + D 吊臂 + F 清扫者 + E 三段落能力 + 结尾(G/H)
             BuildSectionC(anchorCfg, clips);
             BuildSectionD(remoteCfg, clips);
             var fZone = BuildSectionF(teleportCfg, coverLayer, clips);
-
-            // 终点（F 段之后，到达即通关）
-            BuildExit(new Vector3(119f, 0.6f, 0f));
+            BuildSectionE(bulbCfg, magnetCfg, balloonCfg, clips);
+            var ending = BuildEnding(clips);
+            BuildPostFX(); // URP 后处理氛围（失败可注释）
 
             // 检查点（含编辑器 Gizmos + 运行时标记）
             MakeCheckpoint("Checkpoint_0", 0, new Vector3(2f, 1f, 0f));
@@ -142,6 +158,8 @@ namespace Inkform.EditorTools
             MakeCheckpoint("Checkpoint_3", 3, new Vector3(55f, 1f, 0f));
             MakeCheckpoint("Checkpoint_4", 4, new Vector3(71f, 1f, 0f));
             MakeCheckpoint("Checkpoint_5", 5, new Vector3(93f, 1f, 0f));
+            MakeCheckpoint("Checkpoint_6", 6, new Vector3(126f, 1f, 0f));
+            MakeCheckpoint("Checkpoint_7", 7, new Vector3(158f, 1f, 0f));
 
             // 玩家（根不缩放，子 Body 承担形态视觉缩放）
             var input = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
@@ -168,6 +186,7 @@ namespace Inkform.EditorTools
             BuildDebugHud();
             BuildInteractionPrompt();
             BuildLevelCompleteUI();
+            if (ending != null) ending.Fader = fader;
 
             var cpSysGo = new GameObject("CheckpointSystem");
             var cpSys = cpSysGo.AddComponent<CheckpointSystem>();
@@ -182,11 +201,11 @@ namespace Inkform.EditorTools
             EditorSceneManager.SaveScene(scene, ScenePath);
             AssetDatabase.SaveAssets();
             Debug.Log($"[M1SceneBuilder] 已生成并打开 {ScenePath}。");
-            EditorUtility.DisplayDialog("Inkform M1",
-                "M1 测试场景已重建：\n" + ScenePath +
-                "\n\nA/D 移动、Space 跳、E 在目标旁单击=扫描 / 远离=还原。\n" +
-                "橙=船锚(矮胖·重·跳矮)、蓝=轻形态(细高·快·跳高)；\n" +
-                "红色脉动区=致死，躲到绿色掩体棚下豁免；走到绿色 EXIT=通关。",
+            EditorUtility.DisplayDialog("Inkform — Full Scene (A-H)",
+                "完整关卡场景已生成：\n" + ScenePath +
+                "\n\nWASD 移动、Space 跳、E 在目标旁扫描/远离还原、鼠标左键=用能力。\n" +
+                "A 学习 → B 躲移动探照灯 → C 船锚开水闸 → D 遥控搭桥 →\n" +
+                "F 传送躲清扫者开门 → E 灯泡供电/磁铁拉门/气球高台开关 → 终点结尾过场。",
                 "OK");
         }
 
@@ -221,6 +240,14 @@ namespace Inkform.EditorTools
             visual.BodyRenderer = body.GetComponent<Renderer>();
             visual.BodyRoot = body.transform;
             visual.CoreColor = CoreColor;
+
+            // 灯泡形态发光（默认关，BulbForm 持有时开启）
+            var glowGo = new GameObject("Glow");
+            glowGo.transform.SetParent(player.transform, false);
+            var glow = glowGo.AddComponent<Light>();
+            glow.type = LightType.Point; glow.range = 9f; glow.intensity = 2.6f;
+            glow.color = new Color(1f, 0.95f, 0.7f);
+            glow.enabled = false;
 
             // 脚步循环音源（clip 由 Build() 赋占位）
             var foot = player.AddComponent<AudioSource>();
@@ -320,10 +347,15 @@ namespace Inkform.EditorTools
             var toast = MakeText(go.transform, "Toast", new Vector2(0.5f, 1f), new Vector2(0f, -120f), new Vector2(700f, 50f), 28, TextAnchor.UpperCenter);
             toast.alignment = TextAnchor.UpperCenter;
             toast.color = new Color(0.5f, 1f, 0.7f);
+            // 操控类能力瞄准提示（在扫描提示上方）
+            var abilityPrompt = MakeText(go.transform, "AbilityPrompt", new Vector2(0.5f, 0f), new Vector2(0f, 140f), new Vector2(700f, 46f), 24, TextAnchor.LowerCenter);
+            abilityPrompt.alignment = TextAnchor.LowerCenter;
+            abilityPrompt.color = new Color(1f, 0.85f, 0.4f);
 
             var ui = go.AddComponent<InteractionPromptUI>();
             ui.PromptText = prompt;
             ui.ToastText = toast;
+            ui.AbilityPromptText = abilityPrompt;
         }
 
         static void BuildLevelCompleteUI()
@@ -374,6 +406,7 @@ namespace Inkform.EditorTools
             var camGo = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
             camGo.tag = "MainCamera";
             camGo.GetComponent<Camera>().backgroundColor = new Color(0.03f, 0.04f, 0.06f);
+            camGo.GetComponent<Camera>().GetUniversalAdditionalCameraData().renderPostProcessing = true; // 开启 URP 后处理
             camGo.AddComponent<CinemachineBrain>();
             camGo.transform.position = new Vector3(2f, 4f, -12f);
 
@@ -499,9 +532,9 @@ namespace Inkform.EditorTools
             killGo.AddComponent<KillVolume>();
 
             // 可遥控集装箱（侧边待命，遥控 Operate 移到缺口搭桥）
-            var cont = MakeBox("MovableContainer", new Vector3(72f, 0.6f, 2.8f), new Vector3(5.5f, 1.2f, 2.4f), 0, new Color(0.5f, 0.42f, 0.3f));
+            var cont = MakeBox("MovableContainer", new Vector3(72f, 0.6f, 1.8f), new Vector3(5.5f, 1.2f, 2.4f), 0, new Color(0.6f, 0.5f, 0.25f));
             var mc = cont.AddComponent<MovableContainer>();
-            mc.BridgeOffset = new Vector3(4.5f, -0.1f, -2.8f); // 移到缺口中 (76.5,0.5,0)
+            mc.BridgeOffset = new Vector3(4.5f, -0.1f, -1.8f); // 移到缺口中 (76.5,0.5,0)
             mc.MoveDuration = 1.0f;
             var csfx = cont.AddComponent<AudioSource>();
             csfx.clip = clips.Bridge; csfx.playOnAwake = false; csfx.spatialBlend = 1f;
@@ -512,6 +545,116 @@ namespace Inkform.EditorTools
             var puzzle = new GameObject("Puzzle_D").AddComponent<PuzzleController>();
             puzzle.PuzzleId = 101;
             puzzle.Mechanisms.Add(mc);
+        }
+
+        // E 段（段落三能力串联：灯泡供电 → 磁铁拉门 → 气球高台开关）
+        static void BuildSectionE(S_AbilityConfig bulbCfg, S_AbilityConfig magnetCfg, S_AbilityConfig balloonCfg,
+            PlaceholderAudioGenerator.Clips clips)
+        {
+            MakeBox("Ground_E", new Vector3(137f, -0.5f, 0f), new Vector3(34f, 1f, 8f), 0, new Color(0.13f, 0.14f, 0.18f));
+
+            // ① 灯泡供电门
+            MakeScanTarget("ScanTarget_Bulb", new Vector3(123f, 0.6f, 0f), bulbCfg);
+            var gate1 = MakeBox("Gate_Bulb", new Vector3(130f, 1.75f, 0f), new Vector3(0.6f, 3.5f, 8f), 0, new Color(0.3f, 0.34f, 0.4f)).AddComponent<SimpleGate>();
+            var powerGo = MakeBox("PowerNode", new Vector3(127f, 0.8f, 0f), new Vector3(1f, 1.6f, 1f), 0, new Color(1f, 0.85f, 0.3f));
+            var power = powerGo.AddComponent<PowerNode>();
+            power.Gate = gate1; power.Sfx = AddSfx(powerGo, clips.Power);
+
+            // ② 磁铁金属门
+            MakeScanTarget("ScanTarget_Magnet", new Vector3(133f, 0.6f, 0f), magnetCfg);
+            var metalGo = MakeBox("MetalDoor", new Vector3(140f, 1.75f, 0f), new Vector3(0.6f, 3.5f, 8f), 0, new Color(0.45f, 0.3f, 0.3f));
+            var metal = metalGo.AddComponent<MetalDoor>();
+            metal.OpenOffset = new Vector3(0f, -4f, 0f); metal.Sfx = AddSfx(metalGo, clips.Magnet);
+
+            // ③ 气球高台 + 高处开关 → 结尾门
+            MakeScanTarget("ScanTarget_Balloon", new Vector3(143f, 0.6f, 0f), balloonCfg);
+            MakeBox("Platform_High", new Vector3(148f, 1.5f, 0f), new Vector3(6f, 3f, 8f), 0, new Color(0.2f, 0.22f, 0.26f)); // 顶 y=3，气球才跳得上
+            var endGate = MakeBox("Gate_End", new Vector3(152f, 1.75f, 0f), new Vector3(0.6f, 3.5f, 8f), 0, new Color(0.3f, 0.34f, 0.4f)).AddComponent<SimpleGate>();
+            var hsGo = new GameObject("HighSwitch");
+            hsGo.transform.position = new Vector3(148f, 3.6f, 0f); // 高台顶上
+            var hsCol = hsGo.AddComponent<BoxCollider>(); hsCol.isTrigger = true; hsCol.size = new Vector3(5f, 1.2f, 6f);
+            var hs = hsGo.AddComponent<HighSwitch>();
+            hs.Gate = endGate; hs.Sfx = AddSfx(hsGo, clips.Balloon);
+
+            var pz = new GameObject("Puzzle_E").AddComponent<PuzzleController>();
+            pz.PuzzleId = 102;
+            pz.Mechanisms.Add(power); pz.Mechanisms.Add(metal); pz.Mechanisms.Add(hs);
+        }
+
+        // 结尾段（G 出口 + H 结尾镜头）：到达终点触发结尾过场（脚本 + 可选 Timeline）
+        static EndingDirector BuildEnding(PlaceholderAudioGenerator.Clips clips)
+        {
+            MakeBox("Ground_End", new Vector3(166f, -0.5f, 0f), new Vector3(28f, 1f, 8f), 0, new Color(0.15f, 0.16f, 0.2f));
+
+            // 外界之光
+            var lightGo = new GameObject("OutsideLight");
+            lightGo.transform.position = new Vector3(176f, 5f, 0f);
+            lightGo.transform.rotation = Quaternion.Euler(20f, 200f, 0f);
+            var endLight = lightGo.AddComponent<Light>();
+            endLight.type = LightType.Spot; endLight.range = 30f; endLight.spotAngle = 70f; endLight.intensity = 0.5f;
+            endLight.color = new Color(1f, 0.97f, 0.85f);
+            var halo = MakeDanger("EndGlow", new Vector3(176f, 2.5f, 0f), new Vector3(3f, 5f, 3f));
+            halo.GetComponent<DangerPulse>().BaseColor = new Color(1f, 0.95f, 0.8f, 1f); // 暖白光晕脉动（非红）
+
+            // 终点触发 + 结尾导演
+            var endGo = new GameObject("EndGoal");
+            endGo.transform.position = new Vector3(170f, 1.5f, 0f);
+            var ec = endGo.AddComponent<BoxCollider>(); ec.isTrigger = true; ec.size = new Vector3(3f, 3f, 8f);
+            var ending = endGo.AddComponent<EndingDirector>();
+            ending.EndLight = endLight; ending.Duration = 4f;
+
+            // 结尾专属机位（拉远、看终点与光）+ 切换区
+            var ecamGo = new GameObject("CM Ending Cam");
+            var ecam = ecamGo.AddComponent<CinemachineCamera>();
+            ecamGo.transform.position = new Vector3(168f, 7f, -16f);
+            ecamGo.transform.LookAt(new Vector3(176f, 3f, 0f));
+            ecam.Priority = 0;
+            var lens = ecam.Lens; lens.FieldOfView = 55f; ecam.Lens = lens;
+            var zoneGo = new GameObject("CameraZone_End");
+            zoneGo.transform.position = new Vector3(164f, 2f, 0f);
+            var zc = zoneGo.AddComponent<BoxCollider>(); zc.isTrigger = true; zc.size = new Vector3(8f, 6f, 10f);
+            var zone = zoneGo.AddComponent<CameraZone>(); zone.Cam = ecam; zone.ActivePriority = 30; zone.InactivePriority = 0;
+
+            // 可选 Timeline（氛围）：激活光晕物体
+            BuildEndingTimeline(endGo, ending, halo);
+            return ending;
+        }
+
+        static void BuildEndingTimeline(GameObject endGo, EndingDirector ending, GameObject haloTarget)
+        {
+            EnsureFolder("Assets/Timeline");
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            var track = timeline.CreateTrack<ActivationTrack>();
+            var clip = track.CreateDefaultClip(); // ActivationPlayableAsset 是 internal，用默认 clip 工厂
+            clip.start = 0; clip.duration = 5;
+            AssetDatabase.CreateAsset(timeline, "Assets/Timeline/Ending.playable");
+
+            var director = endGo.AddComponent<PlayableDirector>();
+            director.playableAsset = timeline;
+            director.playOnAwake = false;
+            director.SetGenericBinding(track, haloTarget);
+            ending.Director = director;
+        }
+
+        static void BuildPostFX()
+        {
+            EnsureFolder("Assets/Settings");
+            var profile = ScriptableObject.CreateInstance<VolumeProfile>();
+            var bloom = profile.Add<Bloom>(true); bloom.intensity.Override(0.55f); bloom.threshold.Override(1.1f);
+            var vig = profile.Add<Vignette>(true); vig.intensity.Override(0.32f);
+            var col = profile.Add<ColorAdjustments>(true); col.saturation.Override(-18f); col.contrast.Override(8f);
+            AssetDatabase.CreateAsset(profile, "Assets/Settings/M2_PostFX.asset");
+
+            var volGo = new GameObject("Global Volume");
+            var vol = volGo.AddComponent<Volume>();
+            vol.isGlobal = true; vol.sharedProfile = profile;
+        }
+
+        static AudioSource AddSfx(GameObject go, AudioClip clip)
+        {
+            var src = go.AddComponent<AudioSource>();
+            src.clip = clip; src.playOnAwake = false; src.spatialBlend = 1f;
+            return src;
         }
 
         static CameraZone BuildSectionF(S_AbilityConfig teleportCfg, int coverLayer, PlaceholderAudioGenerator.Clips clips)

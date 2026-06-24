@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a27e89ae43d59d945821206d30e97844, type: 3}
+  m_Name: S_MagnetForm
+  m_EditorClassIdentifier: Inkform.Data::Inkform.Data.S_AbilityConfig
+  Form: 5
+  DisplayName: "\u78C1\u94C1"
+  Movement:
+    MoveSpeedMul: 0.8
+    MassMul: 1.5
+    JumpHeightMul: 0.8
+    Buoyancy: 0
+    Drag: 0.2
+    CanJump: 1
+  BodyColor: {r: 0.6, g: 0.3, b: 0.3, a: 1}
+  BodyScale: {x: 1.1, y: 0.9, z: 1.1}
+  Icon: {fileID: 0}

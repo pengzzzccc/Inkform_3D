@@ -12,6 +12,9 @@
         "Unity.InputSystem",
         "Unity.Splines",
         "Unity.Mathematics",
+        "Unity.Timeline",
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.RenderPipelines.Core.Runtime",
         "UnityEngine.UI",
         "UniTask"
     ],

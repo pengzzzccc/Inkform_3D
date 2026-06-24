@@ -1,4 +1,3 @@
-using UnityEngine;
 using Inkform.Data;
 
 namespace Inkform.Gameplay
@@ -14,18 +13,9 @@ namespace Inkform.Gameplay
         const float Range = 7f;
 
         public override void OnUse(PlayerContext ctx)
-        {
-            IRemoteControllable best = null;
-            float bestSq = Range * Range;
-            foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
-            {
-                if (mb is IRemoteControllable rc)
-                {
-                    float d = (mb.transform.position - ctx.Transform.position).sqrMagnitude;
-                    if (d < bestSq) { bestSq = d; best = rc; }
-                }
-            }
-            best?.Operate();
-        }
+            => FindNearest<IRemoteControllable>(ctx.Transform.position, Range)?.Operate();
+
+        public override string AimHint(PlayerContext ctx)
+            => FindNearest<IRemoteControllable>(ctx.Transform.position, Range) != null ? "[左键] 操控机关" : null;
     }
 }
