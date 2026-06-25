@@ -32,35 +32,37 @@ namespace Inkform.Nanobots
 
         [Header("流动手感")]
         public float BlobSpeed = 1f;
-        [Tooltip("蔓延+立起的推进速度（小=慢、更 cinematic）。")]
+        [Tooltip("树状生长的推进速度（小=慢、更 cinematic）。")]
         public float PathSpeed = 0.35f;
-        public float WrapFormationSpeed = 1.2f;
-        [Tooltip("到达 F（目标正下方）后的积聚停顿，蓄势用。")]
-        public float FootHoldTime = 0.25f;
+        [Tooltip("生长前沿到达此进度时开始包裹上色（约等于空中段走完、首次触面）。")]
+        [Range(0f, 1f)] public float WrapTriggerProgress = 0.45f;
 
-        [Header("蔓延轨迹（A→F 贴地 + 分形）")]
-        [Tooltip("A→F 水平细分段数：越多越贴合地形起伏。")]
-        public int GroundSamples = 10;
-        [Tooltip("贴地离地高度，避免 bot 嵌进地面。")]
-        public float GroundClearance = 0.15f;
-        [Tooltip("支流数：行进时一股分成几股(1=不分叉)。")]
-        public int BranchCount = 4;
-        [Tooltip("支流最大横向张开间距（最外两股相距约 2 倍此值）。")]
-        public float BranchSpread = 2.5f;
-        [Tooltip("支流内分形细抖动幅度。")]
-        public float FractalAmp = 0.35f;
-        [Tooltip("分形噪声频率。")]
-        public float FractalScale = 1.5f;
-        [Tooltip("分形沿时间漂移速度，让虫群活起来。")]
+        [Header("树状分支（空中伸展 + 表面蔓延）")]
+        [Tooltip("叶子末梢数：表面均匀终点个数（覆盖分辨率）。bot 按 i%LeafCount 分摊。")]
+        public int LeafCount = 64;
+        [Tooltip("前几级分叉在空中（>此深度的节点贴面蔓延）。")]
+        public int AirBranchDepth = 3;
+        [Tooltip("空中节点最大向外抬出高度（depth=0 最大，随深度衰减到 0）。")]
+        public float OutwardLift = 2.5f;
+        [Tooltip("表面段细分段数：>0 时把贴面段投影回最近表面点，避免切入凹陷(穿模)。")]
+        public int SurfaceSubdiv = 2;
+        [Tooltip("分支粗细：同叶多 bot 的横向簇宽。")]
+        public float BranchThickness = 0.3f;
+        [Tooltip("空中段分形抖动幅度（表面段自动衰减到几乎不抖）。")]
+        public float JitterAmp = 0.3f;
+        [Tooltip("分形抖动噪声频率。")]
+        public float JitterScale = 0.6f;
+        [Tooltip("抖动沿时间漂移速度，让虫群活起来。")]
         public float FlowSpeed = 0.4f;
-        [Tooltip("队伍在路上拉散程度。")]
-        public float Trail = 0.35f;
+        [Tooltip("队伍在路上拉散程度（弧长单位）。")]
+        public float Trail = 2f;
 
         public State Current { get; private set; } = State.Idle;
 
         readonly List<Possessable> _candidates = new();
         int _selected;
         Coroutine _possessCo;
+        NanobotTree _tree; // 当前预解算的生长树（供 Gizmos 可视化）
 
         void Start()
         {
@@ -162,81 +164,52 @@ namespace Inkform.Nanobots
         public void Possess(Possessable target)
         {
             if (target == null) { EnterIdle(); return; }
-            if (!ResolveFootAndContact(target, out Vector3 foot, out Vector3 contact))
+            if (!ResolveFootAndContact(target, out _, out Vector3 contact))
             {
                 Debug.Log($"[PossessionDirector] {target.name} 不可附身（悬空/底下没地/被遮挡）。");
                 EnterIdle();
                 return;
             }
             if (_possessCo != null) StopCoroutine(_possessCo);
-            _possessCo = StartCoroutine(PossessRoutine(target, foot, contact));
+            _possessCo = StartCoroutine(PossessRoutine(target, contact));
         }
 
-        IEnumerator PossessRoutine(Possessable target, Vector3 foot, Vector3 contact)
+        IEnumerator PossessRoutine(Possessable target, Vector3 contact)
         {
             ClearHighlights();
             target.Highlighted = true; // 选中目标保持高亮直到包裹
 
-            // ① 蔓延+立起：A→F→P 的 L 折线。蔓延段贴地起伏 + 分形涌动；
-            //    F 处硬转向是特意的（蔓延→立起的相变）。AB 不走。
+            // ① 触手伸出前一次性预解算整棵生长树：A → 空中树状分叉 → 表面均匀叶子末梢。
+            //    每条分支各奔一个不同的表面点；树只发散不汇聚（分离后不回聚）。
             Current = State.Moving;
             Vector3 a = Swarm.Centroid;
-            var path = BuildCrawlPath(a, foot, contact);
-            Swarm.SetFormation(new PathFlowFormation(path, Trail, BranchCount, BranchSpread,
-                FractalAmp, FractalScale, FlowSpeed), PathSpeed);
+            Vector3[] leaves = target.GetEvenSurfaceSamples(Mathf.Max(1, LeafCount), out _);
+            var projector = SurfaceSubdiv > 0 ? target.GetSurfaceProjector() : null;
+            _tree = NanobotTree.Build(a, leaves, target.Bounds.center,
+                AirBranchDepth, OutwardLift, SurfaceSubdiv, projector);
 
-            while (!Swarm.FormationComplete) yield return null;
+            Swarm.SetFormation(new TreeBranchFormation(_tree, Trail, BranchThickness,
+                JitterAmp, JitterScale, FlowSpeed), PathSpeed);
 
-            // F 处积聚停顿做蓄势（cinematic）。形态已 complete，bot 停在 P。
-            if (FootHoldTime > 0f) yield return new WaitForSeconds(FootHoldTime);
-
-            // ② 接触 P 即开始包裹：shader 距离场 + bot 散布到表面。
-            Current = State.Wrapping;
-            target.BeginWrapShader(contact);
-            Swarm.SetFormation(new SurfaceWrapFormation(target.GetSurfaceSamples(Swarm.BotCount)),
-                WrapFormationSpeed);
-
-            while (!Swarm.FormationComplete) yield return null;
+            // ② 生长前沿越过空中段、首次触面时开始包裹上色（shader 距离场扫满表面）。
+            bool wrapStarted = false;
+            while (!Swarm.FormationComplete)
+            {
+                if (!wrapStarted && Swarm.Progress >= WrapTriggerProgress)
+                {
+                    Current = State.Wrapping;
+                    target.BeginWrapShader(contact);
+                    wrapStarted = true;
+                }
+                yield return null;
+            }
+            if (!wrapStarted) { Current = State.Wrapping; target.BeginWrapShader(contact); }
             yield return new WaitForSeconds(target.WrapDuration); // 等 shader 扫满
 
             // ③ 附身生效。
             Current = State.Possessed;
             target.OnPossessed();
             _possessCo = null;
-        }
-
-        /// <summary>
-        /// 构造蔓延+立起路径：A → (贴地折线) → F → P。
-        /// A→F 段水平细分，每个中间点朝下 raycast 贴到地面（+离地高度），
-        /// 让路径顺着地形起伏；起点 A 用质心（保留从团里淌出的感觉），不强行贴地。
-        /// F→P 竖直立起段保留（硬转向特意为之）。
-        /// 接口预留：以后把这里的水平插值换成 NavMesh.CalculatePath 的 corner 序列即可，
-        /// PathFlowFormation 一行不用改。
-        /// </summary>
-        PolylinePath BuildCrawlPath(Vector3 a, Vector3 foot, Vector3 contact)
-        {
-            int n = Mathf.Max(1, GroundSamples);
-            var pts = new System.Collections.Generic.List<Vector3>(n + 2);
-            pts.Add(a);
-
-            // 在 A 与 F 之间按水平方向插点，每点贴地。k 从 1 起（A 已加）。
-            for (int k = 1; k <= n; k++)
-            {
-                float f = k / (float)n;                 // (0,1]
-                Vector3 lerp = Vector3.Lerp(a, foot, f); // 含线性 Y 作退化兜底
-                // 从足够高处朝下打，避免起点落在地形之下漏检。
-                Vector3 origin = new Vector3(lerp.x, Mathf.Max(a.y, foot.y) + 20f, lerp.z);
-                if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f,
-                        GroundMask, QueryTriggerInteraction.Ignore))
-                    pts.Add(hit.point + Vector3.up * GroundClearance);
-                else
-                    pts.Add(lerp); // 没命中地面：退化用线性插值点，不中断
-            }
-
-            // 末点确保是 F（贴地循环最后一点 f=1 已≈F，但显式收口更稳），再接 P。
-            pts[pts.Count - 1] = foot;
-            pts.Add(contact);
-            return new PolylinePath(pts.ToArray());
         }
 
         /// <summary>
@@ -272,9 +245,20 @@ namespace Inkform.Nanobots
 
         void OnDrawGizmosSelected()
         {
-            if (Player == null) return;
-            Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.25f);
-            Gizmos.DrawWireSphere(Player.position, ScanRadius);
+            if (Player != null)
+            {
+                Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.25f);
+                Gizmos.DrawWireSphere(Player.position, ScanRadius);
+            }
+
+            // 预解算生长树：分叉线段 + 叶子末梢点（Play 模式下选中本物体可见，便于验收）。
+            if (_tree != null && _tree.LeafCount > 0)
+            {
+                Gizmos.color = new Color(0.2f, 1f, 0.6f, 0.8f);
+                foreach (var (ea, eb) in _tree.Edges) Gizmos.DrawLine(ea, eb);
+                Gizmos.color = new Color(1f, 0.7f, 0.2f, 1f);
+                foreach (var leaf in _tree.Leaves) Gizmos.DrawSphere(leaf, 0.06f);
+            }
         }
     }
 }

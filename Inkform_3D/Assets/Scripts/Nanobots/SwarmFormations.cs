@@ -17,60 +17,6 @@ namespace Inkform.Nanobots
     }
 
     /// <summary>
-    /// 折线路径：按弧长参数化采样。A→F→P 的 L 形路径用它表达。
-    /// 段长在构造时缓存，PointAt01 按归一弧长插值。
-    /// </summary>
-    public sealed class PolylinePath
-    {
-        readonly Vector3[] _pts;
-        readonly float[] _cumLen; // _cumLen[k] = 从起点到第 k 个点的累计弧长
-        public float TotalLength { get; }
-
-        public PolylinePath(params Vector3[] points)
-        {
-            _pts = points;
-            _cumLen = new float[points.Length];
-            float acc = 0f;
-            _cumLen[0] = 0f;
-            for (int k = 1; k < points.Length; k++)
-            {
-                acc += Vector3.Distance(points[k - 1], points[k]);
-                _cumLen[k] = acc;
-            }
-            TotalLength = acc;
-        }
-
-        /// <summary>归一弧长 s∈[0,1] 处的世界点。</summary>
-        public Vector3 PointAt01(float s)
-        {
-            if (_pts.Length == 1 || TotalLength <= 1e-5f) return _pts[_pts.Length - 1];
-            s = Mathf.Clamp01(s);
-            float target = s * TotalLength;
-            for (int k = 1; k < _pts.Length; k++)
-            {
-                if (target <= _cumLen[k] || k == _pts.Length - 1)
-                {
-                    float segLen = _cumLen[k] - _cumLen[k - 1];
-                    float f = segLen > 1e-5f ? (target - _cumLen[k - 1]) / segLen : 0f;
-                    return Vector3.Lerp(_pts[k - 1], _pts[k], Mathf.Clamp01(f));
-                }
-            }
-            return _pts[_pts.Length - 1];
-        }
-
-        /// <summary>归一弧长 s 处的路径切线方向（前进方向，已归一化）。</summary>
-        public Vector3 TangentAt01(float s)
-        {
-            if (_pts.Length < 2 || TotalLength <= 1e-5f) return Vector3.forward;
-            float eps = 0.01f;
-            Vector3 ahead = PointAt01(Mathf.Min(1f, s + eps));
-            Vector3 behind = PointAt01(Mathf.Max(0f, s - eps));
-            Vector3 dir = ahead - behind;
-            return dir.sqrMagnitude > 1e-8f ? dir.normalized : Vector3.forward;
-        }
-    }
-
-    /// <summary>
     /// 确定性伪随机：同一 i 永远得到同一组值，避免 idle 抖动。
     /// 切勿用 UnityEngine.Random 替代——那会让稳定形态每帧跳。
     /// </summary>
@@ -179,71 +125,76 @@ namespace Inkform.Nanobots
     }
 
     /// <summary>
-    /// 蔓延+立起形态：bot 沿折线 A→F→P 流动，途中从一股分裂成几条支流（河流三角洲），
-    /// 接近目标处各支流收束汇合。支流内再叠分形(fBm)细抖动。
-    /// trail 控制队伍拉散程度；t=1 时全员汇聚到终点 P（为包裹做准备）。
-    /// ⚠ 收敛性铁律：所有横向(支流)/分形偏移在 s→1 处归零 → t=1 全员汇聚 P，绝不可破。
+    /// 树状分形分支形态：bot 沿预解算的 <see cref="NanobotTree"/> 生长。
+    /// 起点 A → 共享树干 → 递归二分分叉 → 表面均匀叶子末梢。
+    ///
+    /// 用**生长前沿**（统一物理推进弧长 front = t·(MaxLen+lag)）驱动：共享段上的 bot
+    /// 世界点重合 → 树干清晰、在分叉点精确裂开，像真的树在生长。bot 按 i%LeafCount 分摊
+    /// 到叶子路径，叠加横向粗细偏移使分支有体积、末梢成簇。
+    ///
+    /// ⚠ 发散铁律（与旧 PathFlowFormation 相反）：树只发散不汇聚。横向偏移/抖动包络在
+    /// 末梢(arc→Length)归零 → 终点精确落在均匀叶子上，保覆盖均匀且分支不回聚。
+    /// 抖动幅度随离面高度衰减 → 空中段略卷曲、表面段近乎不抖（蔓延而非缠绕）。
     /// </summary>
-    public sealed class PathFlowFormation : ISwarmFormation
+    public sealed class TreeBranchFormation : ISwarmFormation
     {
-        readonly PolylinePath _path;
-        readonly float _trail;
-        readonly int _branchCount;     // 支流数（一股分成几股）
-        readonly float _branchSpread;  // 支流最大横向间距
-        readonly float _fractalAmp;    // 支流内分形细抖动幅度
-        readonly float _fractalScale;  // 噪声频率
-        readonly float _flowSpeed;     // 沿时间漂移，让虫群"活"起来
+        readonly NanobotTree _tree;
+        readonly float _maxLag;       // 队伍拉散（弧长单位）
+        readonly float _thickness;    // 分支粗细（同叶多 bot 横向簇宽）
+        readonly float _jitterAmp;    // 空中段分形抖动幅度
+        readonly float _jitterScale;  // 抖动噪声频率
+        readonly float _flowSpeed;    // 抖动沿时间漂移
         const int Octaves = 3;
 
-        public PathFlowFormation(PolylinePath path, float trail = 0.35f,
-            int branchCount = 4, float branchSpread = 2.5f,
-            float fractalAmp = 0.35f, float fractalScale = 1.5f, float flowSpeed = 0.4f)
+        public TreeBranchFormation(NanobotTree tree, float trail = 2f, float thickness = 0.3f,
+            float jitterAmp = 0.3f, float jitterScale = 0.6f, float flowSpeed = 0.4f)
         {
-            _path = path;
-            _trail = Mathf.Max(0f, trail);
-            _branchCount = Mathf.Max(1, branchCount);
-            _branchSpread = Mathf.Max(0f, branchSpread);
-            _fractalAmp = Mathf.Max(0f, fractalAmp);
-            _fractalScale = Mathf.Max(0.01f, fractalScale);
+            _tree = tree;
+            _maxLag = Mathf.Max(0f, trail);
+            _thickness = Mathf.Max(0f, thickness);
+            _jitterAmp = Mathf.Max(0f, jitterAmp);
+            _jitterScale = Mathf.Max(0.01f, jitterScale);
             _flowSpeed = flowSpeed;
         }
 
         public Vector3 SampleTarget(int i, int count, float t)
         {
-            // 每个 bot 落后一点点（确定性），队伍因此在路上拉成一条。
-            // t=1 时 (1+trail) - hash*trail >= 1 → Clamp01 全部为 1 → 汇聚到 P。
-            float lag = Hash.Unit(i, 5) * _trail;
-            float s = Mathf.Clamp01(t * (1f + _trail) - lag);
-            Vector3 basePos = _path.PointAt01(s);
+            int L = _tree.LeafCount;
+            if (L == 0) return Vector3.zero;
+            BotPath path = _tree.LeafPaths[i % L];
 
-            // 分叉包络：sin(π·s) 在 s=0(A,一源) 与 s=1(P,汇合) 处为 0，中段最大。
-            // 立起段靠近 s=1，包络已小 → 支流自然收束成一股立起。
-            float branchEnv = Mathf.Sin(Mathf.PI * s);
+            // 生长前沿：统一物理推进弧长，lag 让队伍在路上拉成一条。
+            // t=1 时 front-lag ≥ MaxLen ≥ 任意 path.Length → 全员到达各自叶子。
+            float lag = Hash.Unit(i, 5) * _maxLag;
+            float front = t * (_tree.MaxLen + _maxLag);
+            float arc = Mathf.Clamp(front - lag, 0f, path.Length);
+            path.Sample(arc, out Vector3 pos, out float height, out Vector3 tangent);
 
-            Vector3 pos = basePos;
+            // 末梢/起点收束包络：在 arc→0(A) 与 arc→Length(叶) 处归零 → 树干/末梢清晰，
+            // 终点精确落在均匀叶子上（保覆盖均匀、不回聚）。
+            float taperLen = Mathf.Max(0.01f, _thickness * 4f);
+            float envelope = Mathf.Clamp01(arc / taperLen)
+                           * Mathf.Clamp01((path.Length - arc) / taperLen);
 
-            // ① 支流横向偏移：每个 bot 归属一条支流，沿路径横向(地面平面)拉开。
-            if (_branchCount > 1 && _branchSpread > 0f && branchEnv > 1e-4f)
+            // ① 横向粗细：沿切线的法平面用确定性方向散开 → 分支有体积、末梢成簇。
+            if (_thickness > 0f && envelope > 1e-4f)
             {
-                int branch = i % _branchCount;
-                float lane = (branch / (float)(_branchCount - 1) - 0.5f) * 2f; // [-1,1]
-                Vector3 tangent = _path.TangentAt01(s);
-                Vector3 side = Vector3.Cross(tangent, Vector3.up);
-                if (side.sqrMagnitude < 1e-6f) side = Vector3.right; // 竖直立起段退化兜底
-                side.Normalize();
-
-                // 支流内宽度：同支流的 bot 用 hash 在通道里小幅散开，不挤成一条线。
-                float laneJitter = (Hash.Unit(i, 9) - 0.5f) * (_branchSpread / _branchCount);
-                // lane∈[-1,1]，乘 _branchSpread → 最外两股相距 2*_branchSpread。
-                pos += side * ((lane * _branchSpread + laneJitter) * branchEnv);
+                Vector3 n1 = Vector3.Cross(tangent, Vector3.up);
+                if (n1.sqrMagnitude < 1e-6f) n1 = Vector3.right;
+                n1.Normalize();
+                Vector3 n2 = Vector3.Cross(tangent, n1).normalized;
+                float a = (Hash.Unit(i, 13) - 0.5f) * 2f;
+                float b = (Hash.Unit(i, 14) - 0.5f) * 2f;
+                pos += (n1 * a + n2 * b) * (_thickness * envelope);
             }
 
-            // ② 支流内分形细抖动：确定性相位 + 时间漂移；同样按 s→1 衰减。
-            if (_fractalAmp > 0f)
+            // ② 分形抖动：随离面高度衰减 → 表面段几乎不抖（蔓延非缠绕）。
+            float airT = _tree.OutwardLift > 1e-4f ? Mathf.Clamp01(height / _tree.OutwardLift) : 0f;
+            if (_jitterAmp > 0f && airT > 1e-3f)
             {
                 Vector3 phase = new Vector3(Hash.Unit(i, 6), Hash.Unit(i, 7), Hash.Unit(i, 8)) * 50f;
-                Vector3 noisePos = basePos * _fractalScale + phase + Vector3.one * (Time.time * _flowSpeed);
-                pos += Hash.Fbm3(noisePos, Octaves) * (_fractalAmp * branchEnv);
+                Vector3 np = pos * _jitterScale + phase + Vector3.one * (Time.time * _flowSpeed);
+                pos += Hash.Fbm3(np, Octaves) * (_jitterAmp * airT * envelope);
             }
 
             return pos;
