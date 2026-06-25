@@ -5,6 +5,7 @@
         "Inkform.Core",
         "Inkform.Data",
         "Inkform.Gameplay",
+        "Inkform.Nanobots",
         "Inkform.UI",
         "Inkform.Camera",
         "Inkform.Audio",
