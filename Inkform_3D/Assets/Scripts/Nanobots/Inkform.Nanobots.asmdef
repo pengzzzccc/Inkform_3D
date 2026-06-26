@@ -4,6 +4,7 @@
     "references": [
         "Inkform.Core",
         "Inkform.Gameplay",
+        "Inkform.Data",
         "Unity.InputSystem"
     ],
     "includePlatforms": [],

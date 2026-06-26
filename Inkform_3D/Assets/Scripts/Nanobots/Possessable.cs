@@ -181,5 +181,18 @@ namespace Inkform.Nanobots
             Highlighted = false;
             Debug.Log($"[Possessable] {name} 已被附身。", this);
         }
+
+        /// <summary>脱离附身：停止包裹动画并把 _Grow 归 0，还原物体外观。</summary>
+        public void ResetWrap()
+        {
+            if (_wrapCo != null) { StopCoroutine(_wrapCo); _wrapCo = null; }
+            if (_wrapMat.HasProperty(IdGrow)) _wrapMat.SetFloat(IdGrow, 0f);
+        }
+
+        /// <summary>附身/脱离时开关自身碰撞体：附身期间关掉，避免与玩家胶囊复合碰撞冲突。</summary>
+        public void SetCollidersEnabled(bool enabled)
+        {
+            foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = enabled;
+        }
     }
 }

@@ -90,6 +90,7 @@ namespace Inkform.EditorTools
             director.Swarm = swarm;
             director.Player = player.transform;
             director.Input = player.GetComponent<InputReader>();
+            director.PlayerVisual = player.transform.Find("Body"); // 游荡显示/附身隐藏
             director.Tubes = tubes;
             director.ScanRadius = 8f;
             director.PossessableMask = 1 << possessableLayer;

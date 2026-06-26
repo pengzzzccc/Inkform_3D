@@ -5,7 +5,7 @@ namespace Inkform.Nanobots
 {
     /// <summary>
     /// 沙盒用的极简玩家输入适配：只把 Move/Jump 喂给 PlayerMotor，
-    /// 把 Interact/Use 留给 PossessionDirector（扫描/确认）。
+    /// 把 Sprint(扫描)/Interact(附身·脱离) 留给 PossessionDirector。
     /// 不引入完整 PlayerActor + AbilitySystem，避免与附身系统抢同一组输入事件。
     /// </summary>
     [RequireComponent(typeof(PlayerMotor))]
