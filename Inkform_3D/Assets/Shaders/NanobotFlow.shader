@@ -18,6 +18,15 @@ Shader "Inkform/NanobotFlow"
         _ScanGlow    ("Scan Glow (扫线亮度)", Float) = 1.5
         [HDR]_ScanColor ("Scan Color", Color) = (0.6, 0.9, 1.0, 1)
 
+        [HDR]_TipColor ("Tip Color (生长前沿)", Color) = (0.6, 0.95, 1.0, 1)
+        _TipGlow     ("Tip Glow (前沿亮度)", Float) = 4.0
+
+        [HDR]_PanelColor ("Panel Color (面板缝发光)", Color) = (0.3, 0.7, 1.0, 1)
+        _PanelGlow   ("Panel Glow", Float) = 2.0
+        _PanelLineWidth ("Panel Line Width", Range(0.005,0.2)) = 0.04
+        _PanelLengthwise ("Panel Lengthwise (沿管缝密度)", Float) = 2.0
+        _PanelAround ("Panel Around (绕截面缝密度)", Float) = 1.0
+
         _NoiseAmp    ("Noise Amp (表面微噪)", Range(0,0.5)) = 0.06
     }
 
@@ -54,6 +63,13 @@ Shader "Inkform/NanobotFlow"
                 float  _ScanSpeed;
                 float  _ScanFreq;
                 float  _ScanGlow;
+                float4 _TipColor;
+                float  _TipGlow;
+                float4 _PanelColor;
+                float  _PanelGlow;
+                float  _PanelLineWidth;
+                float  _PanelLengthwise;
+                float  _PanelAround;
                 float  _NoiseAmp;
             CBUFFER_END
 
@@ -61,6 +77,9 @@ Shader "Inkform/NanobotFlow"
             {
                 float4 positionOS : POSITION;
                 float3 normalOS   : NORMAL;
+                float2 uv         : TEXCOORD0; // uv.x=绕截面[0,1), uv.y=沿管弧长(尾→头)
+                float2 uv2        : TEXCOORD1; // uv2.x=节内相位 segPhase, uv2.y=节奇偶
+                float4 color      : COLOR;     // color.a = 管头(生长前沿)度
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -69,7 +88,10 @@ Shader "Inkform/NanobotFlow"
                 float4 positionCS  : SV_POSITION;
                 float3 positionWS  : TEXCOORD0;
                 float3 normalWS    : TEXCOORD1;
-                float  axis01      : TEXCOORD2; // 局部长轴归一 [0,1]（尾→头）
+                float  axis01      : TEXCOORD2; // 沿管弧长归一 [0,1]（尾→头）
+                float  tip         : TEXCOORD3; // 管头度
+                float  around      : TEXCOORD4; // 绕截面 [0,1)
+                float2 seg         : TEXCOORD5; // x=节内相位, y=节奇偶
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -112,8 +134,10 @@ Shader "Inkform/NanobotFlow"
                 OUT.positionCS = pos.positionCS;
                 OUT.positionWS = pos.positionWS;
                 OUT.normalWS = nrm.normalWS;
-                // 内置 Capsule 局部 Y 约在 [-1,1]，映射到 [0,1]（尾→头）。
-                OUT.axis01 = saturate(IN.positionOS.y * 0.5 + 0.5);
+                OUT.axis01 = saturate(IN.uv.y);     // 沿管弧长(尾→头)
+                OUT.tip = saturate(IN.color.a);     // 生长前沿度
+                OUT.around = IN.uv.x;               // 绕截面
+                OUT.seg = IN.uv2;                   // 节相位/奇偶
                 return OUT;
             }
 
@@ -132,6 +156,20 @@ Shader "Inkform/NanobotFlow"
                 float scan = frac(IN.axis01 * _ScanFreq - _Time.y * _ScanSpeed);
                 float band = smoothstep(0.85, 1.0, scan); // 窄亮带
 
+                // ── 硬表面面板线 ──
+                // 沿管节缝：节相位 segPhase 接近 0/1 处亮(节与节交界)。
+                float segEdge = min(IN.seg.x, 1.0 - IN.seg.x);                 // 到节缝距离
+                float panelLen = 1.0 - smoothstep(0.0, _PanelLineWidth, segEdge);
+                // 额外沿管细缝(密度 _PanelLengthwise)。
+                float lw = frac(IN.axis01 * _PanelLengthwise);
+                panelLen = max(panelLen, 1.0 - smoothstep(0.0, _PanelLineWidth, min(lw, 1.0 - lw)));
+                // 绕截面棱：4 条边界(q/4)处亮 + 额外密度。
+                float aw = frac(IN.around * 4.0 * max(1.0, _PanelAround));
+                float panelAround = 1.0 - smoothstep(0.0, _PanelLineWidth * 2.0, min(aw, 1.0 - aw));
+                float panel = saturate(max(panelLen, panelAround));
+                // 缝处更暗哑(金属分块感)。
+                float matVar = 1.0 - panel * 0.5;
+
                 InputData inputData = (InputData)0;
                 inputData.positionWS = IN.positionWS;
                 inputData.normalWS = normalize(IN.normalWS);
@@ -141,12 +179,16 @@ Shader "Inkform/NanobotFlow"
                 inputData.normalizedScreenSpaceUV = IN.positionCS.xy / _ScaledScreenParams.xy;
 
                 SurfaceData surfaceData = (SurfaceData)0;
-                surfaceData.albedo = albedo;
+                surfaceData.albedo = albedo * matVar;
                 surfaceData.metallic = _Metallic;
-                surfaceData.smoothness = _Smoothness;
+                surfaceData.smoothness = _Smoothness * matVar; // 缝处更哑
                 surfaceData.occlusion = 1.0;
                 surfaceData.alpha = 1.0;
-                surfaceData.emission = _EmissionColor.rgb + _ScanColor.rgb * (band * _ScanGlow);
+                // 发光 = 高亮 + 流动扫线 + 生长前沿(管头) + 面板缝。
+                surfaceData.emission = _EmissionColor.rgb
+                    + _ScanColor.rgb * (band * _ScanGlow)
+                    + _TipColor.rgb * (IN.tip * _TipGlow)
+                    + _PanelColor.rgb * (panel * _PanelGlow);
 
                 half4 color = UniversalFragmentPBR(inputData, surfaceData);
                 return color;

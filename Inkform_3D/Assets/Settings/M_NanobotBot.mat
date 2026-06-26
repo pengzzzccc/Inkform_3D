@@ -103,6 +103,10 @@ Material:
     - _Metallic: 0.9
     - _NoiseAmp: 0.06
     - _OcclusionStrength: 1
+    - _PanelAround: 1
+    - _PanelGlow: 2.2
+    - _PanelLengthwise: 2
+    - _PanelLineWidth: 0.04
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
@@ -115,6 +119,7 @@ Material:
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
+    - _TipGlow: 4
     - _WorkflowMode: 1
     - _XRMotionVectorsPass: 1
     - _ZWrite: 1
@@ -123,9 +128,11 @@ Material:
     - _Color: {r: 0.54999995, g: 0.8, b: 1, a: 1}
     - _EmissionColor: {r: 0.2, g: 0.5, b: 0.8, a: 1}
     - _HeadColor: {r: 0.75, g: 0.85, b: 1, a: 1}
+    - _PanelColor: {r: 0.6, g: 1.4, b: 2, a: 2}
     - _ScanColor: {r: 0.6, g: 0.9, b: 1, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
     - _TailColor: {r: 0.1, g: 0.2, b: 0.4, a: 1}
+    - _TipColor: {r: 0.6, g: 0.95, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
 --- !u!114 &1488537253435085279

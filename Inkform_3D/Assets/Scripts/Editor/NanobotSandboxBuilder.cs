@@ -65,26 +65,42 @@ namespace Inkform.EditorTools
                 Debug.LogWarning($"[NanobotSandboxBuilder] 未找到 {InputAssetPath}，请手动给 InputReader.Actions 赋值。");
             var player = BuildPlayer(input);
 
-            // ── Swarm 根（身体 + 渲染 + 编排）──
+            // ── Swarm 根（身体[求质心/进度] + 方管渲染 + 编排）──
             var swarmGo = new GameObject("NanobotSwarm");
             swarmGo.transform.position = player.transform.position;
             var swarm = swarmGo.AddComponent<NanobotSwarm>();
-            swarm.Count = 700; // 加密成洪流
+            swarm.Count = 64; // 只用于求质心/形态进度，不再画点粒
 
-            var renderer = swarmGo.AddComponent<NanobotRenderer>();
-            renderer.BotMaterial = botMat;
-            renderer.BotRadius = 0.09f;
-            renderer.StretchAmount = 6f;
-            renderer.StretchSpeedRef = 6f;
-            renderer.SizeJitter = 0.35f;
+            // 方管渲染器（金属管网，替代点粒）。需要 MeshFilter+MeshRenderer。
+            // ⚠ mesh 顶点是世界空间 → 该 GO 必须在世界原点、单位变换，否则会被父级位置二次偏移。
+            var tubeGo = new GameObject("NanobotTubes", typeof(MeshFilter), typeof(MeshRenderer));
+            tubeGo.transform.position = Vector3.zero;
+            tubeGo.transform.rotation = Quaternion.identity;
+            tubeGo.transform.localScale = Vector3.one;
+            var tubes = tubeGo.AddComponent<NanobotTubeRenderer>();
+            tubes.TubeMaterial = botMat;
+            tubeGo.GetComponent<MeshRenderer>().sharedMaterial = botMat;
+            tubes.TubeSize = 0.3f;
+            tubes.RingsPerUnit = 12f;
+            tubes.SegmentsPerUnit = 3f;
+            tubes.SegmentRidge = 0.25f;
+            tubes.SegmentTwist = 22f;
 
             var director = swarmGo.AddComponent<PossessionDirector>();
             director.Swarm = swarm;
             director.Player = player.transform;
             director.Input = player.GetComponent<InputReader>();
+            director.Tubes = tubes;
             director.ScanRadius = 8f;
             director.PossessableMask = 1 << possessableLayer;
             director.GroundMask = 1 << 0; // Default
+            // 束缚绑定参数
+            director.SurfaceOffset = 0.12f;
+            director.StrapCount = 4;
+            director.StrapTurns = 1f;
+            director.SubTentacleCount = 30;
+            director.SubTentacleLength = 0.5f;
+            director.SubTentacleRadius = 0.35f;
 
             // ── 反射探针：高金属度的洪流需要环境反射，否则发黑 ──
             var probeGo = new GameObject("Reflection Probe");
@@ -107,8 +123,8 @@ namespace Inkform.EditorTools
             EditorUtility.DisplayDialog("Inkform — Nanobot Sandbox",
                 "纳米机器人附身沙盒已生成：\n" + ScenePath +
                 "\n\n操作：\n  WASD 移动（Space 跳）\n  E = 扫描 / 在候选间循环切换\n  鼠标左键 = 确认附身选中目标\n\n" +
-                "观察：纳米金属洪流 idle 跟随 → 扫描高亮 → 选定后贴地蔓延(沿速度拉成金属丝流) →\n" +
-                "立起接触 → 表面从底向上包裹生长。",
+                "观察：扫描高亮 → 选定后金属方管从玩家处分叉成几股支流、管头发光地朝目标延伸生长 →\n" +
+                "到目标正下方竖直立起接触 → 表面从底向上包裹生长 → 管网消隐。",
                 "OK");
         }
 
@@ -198,16 +214,26 @@ namespace Inkform.EditorTools
         static Material EnsureWrapMaterial()
         {
             EnsureFolder("Assets/Settings");
-            var existing = AssetDatabase.LoadAssetAtPath<Material>(WrapMatPath);
-            if (existing != null) return existing;
             var sh = Shader.Find("Inkform/NanobotWrap");
             if (sh == null)
             {
                 Debug.LogError("[NanobotSandboxBuilder] 找不到 Inkform/NanobotWrap shader，请确认已编译。");
                 sh = Shader.Find("Universal Render Pipeline/Lit");
             }
-            var mat = new Material(sh);
-            AssetDatabase.CreateAsset(mat, WrapMatPath);
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(WrapMatPath);
+            if (mat == null)
+            {
+                mat = new Material(sh);
+                AssetDatabase.CreateAsset(mat, WrapMatPath);
+            }
+            else if (mat.shader != sh) mat.shader = sh;
+
+            // shader 降级为辅助：possessed 反差小(只微变色),边缘发光收紧感保留。
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", new Color(0.55f, 0.57f, 0.62f));
+            if (mat.HasProperty("_PossessedColor")) mat.SetColor("_PossessedColor", new Color(0.42f, 0.5f, 0.62f));
+            if (mat.HasProperty("_EdgeColor")) mat.SetColor("_EdgeColor", new Color(0.4f, 0.9f, 1f) * 2f);
+            if (mat.HasProperty("_EdgeWidth")) mat.SetFloat("_EdgeWidth", 0.05f);
+            EditorUtility.SetDirty(mat);
             return mat;
         }
 
@@ -238,6 +264,10 @@ namespace Inkform.EditorTools
             if (mat.HasProperty("_TailColor")) mat.SetColor("_TailColor", new Color(0.1f, 0.2f, 0.4f));
             if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0.9f);
             if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.85f);
+            if (mat.HasProperty("_PanelColor")) mat.SetColor("_PanelColor", new Color(0.3f, 0.7f, 1f) * 2f);
+            if (mat.HasProperty("_PanelGlow")) mat.SetFloat("_PanelGlow", 2.2f);
+            if (mat.HasProperty("_PanelLengthwise")) mat.SetFloat("_PanelLengthwise", 2f);
+            if (mat.HasProperty("_PanelAround")) mat.SetFloat("_PanelAround", 1f);
             EditorUtility.SetDirty(mat);
             return mat;
         }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Inkform.Nanobots
@@ -25,6 +26,7 @@ namespace Inkform.Nanobots
         readonly Vector3[] _pts;
         readonly float[] _cumLen; // _cumLen[k] = 从起点到第 k 个点的累计弧长
         public float TotalLength { get; }
+        public IReadOnlyList<Vector3> Points => _pts;
 
         public PolylinePath(params Vector3[] points)
         {
