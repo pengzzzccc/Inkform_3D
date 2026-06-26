@@ -315,4 +315,88 @@ namespace Inkform.Nanobots
 
         public bool IsComplete(float t) => false; // 附身稳态常驻
     }
+
+    /// <summary>
+    /// 树状分形分支形态：bot 沿预解算的 <see cref="NanobotTree"/> 生长。
+    /// 起点 A → 共享树干 → 接触点 P → 表面递归二分分叉 → 表面均匀叶子末梢。
+    ///
+    /// 用**生长前沿**（统一物理推进弧长 front = t·(MaxLen+lag)）驱动：共享段上的 bot
+    /// 世界点重合 → 树干清晰、在分叉点精确裂开，像真的树在生长。bot 按 i%LeafCount 分摊
+    /// 到叶子路径，叠加横向粗细偏移使分支有体积、末梢成簇。
+    ///
+    /// ⚠ 发散铁律（与旧 PathFlowFormation 相反）：树只发散不汇聚。横向偏移/抖动包络在
+    /// 末梢(arc→Length)归零 → 终点精确落在均匀叶子上，保覆盖均匀且分支不回聚。
+    /// 抖动幅度随离面高度衰减 → 空中段略卷曲、表面段近乎不抖（蔓延而非缠绕）。
+    /// </summary>
+    public sealed class TreeBranchFormation : ISwarmFormation
+    {
+        readonly NanobotTree _tree;
+        readonly float _maxLag;       // 队伍拉散（弧长单位）
+        readonly float _thickness;    // 分支粗细（同叶多 bot 横向簇宽）
+        readonly float _jitterAmp;    // 空中段分形抖动幅度
+        readonly float _jitterScale;  // 抖动噪声频率
+        readonly float _flowSpeed;    // 抖动沿时间漂移
+        readonly bool _reverse;       // 反向：从叶收敛回起点(脱离聚合成团)
+        const int Octaves = 3;
+
+        public TreeBranchFormation(NanobotTree tree, float trail = 2f, float thickness = 0.3f,
+            float jitterAmp = 0.3f, float jitterScale = 0.6f, float flowSpeed = 0.4f,
+            bool reverse = false)
+        {
+            _tree = tree;
+            _maxLag = Mathf.Max(0f, trail);
+            _thickness = Mathf.Max(0f, thickness);
+            _jitterAmp = Mathf.Max(0f, jitterAmp);
+            _jitterScale = Mathf.Max(0.01f, jitterScale);
+            _flowSpeed = flowSpeed;
+            _reverse = reverse;
+        }
+
+        public Vector3 SampleTarget(int i, int count, float t)
+        {
+            int L = _tree.LeafCount;
+            if (L == 0) return Vector3.zero;
+            BotPath path = _tree.LeafPaths[i % L];
+
+            // 生长前沿：统一物理推进弧长，lag 让队伍在路上拉成一条。
+            // forward: t=1 时 front-lag ≥ MaxLen → 全员到各自叶子；
+            // reverse: t=1 时 front=0 → 全员收敛回起点(根)，聚合成团。
+            float lag = Hash.Unit(i, 5) * _maxLag;
+            float prog = _reverse ? (1f - t) : t;
+            float front = prog * (_tree.MaxLen + _maxLag);
+            float arc = Mathf.Clamp(front - lag, 0f, path.Length);
+            path.Sample(arc, out Vector3 pos, out float height, out Vector3 tangent);
+
+            // 末梢/起点收束包络：在 arc→0(A) 与 arc→Length(叶) 处归零 → 树干/末梢清晰，
+            // 终点精确落在均匀叶子上（保覆盖均匀、不回聚）。
+            float taperLen = Mathf.Max(0.01f, _thickness * 4f);
+            float envelope = Mathf.Clamp01(arc / taperLen)
+                           * Mathf.Clamp01((path.Length - arc) / taperLen);
+
+            // ① 横向粗细：沿切线的法平面用确定性方向散开 → 分支有体积、末梢成簇。
+            if (_thickness > 0f && envelope > 1e-4f)
+            {
+                Vector3 n1 = Vector3.Cross(tangent, Vector3.up);
+                if (n1.sqrMagnitude < 1e-6f) n1 = Vector3.right;
+                n1.Normalize();
+                Vector3 n2 = Vector3.Cross(tangent, n1).normalized;
+                float a = (Hash.Unit(i, 13) - 0.5f) * 2f;
+                float b = (Hash.Unit(i, 14) - 0.5f) * 2f;
+                pos += (n1 * a + n2 * b) * (_thickness * envelope);
+            }
+
+            // ② 分形抖动：随离面高度衰减 → 表面段几乎不抖（蔓延非缠绕）。
+            float airT = _tree.OutwardLift > 1e-4f ? Mathf.Clamp01(height / _tree.OutwardLift) : 0f;
+            if (_jitterAmp > 0f && airT > 1e-3f)
+            {
+                Vector3 phase = new Vector3(Hash.Unit(i, 6), Hash.Unit(i, 7), Hash.Unit(i, 8)) * 50f;
+                Vector3 np = pos * _jitterScale + phase + Vector3.one * (Time.time * _flowSpeed);
+                pos += Hash.Fbm3(np, Octaves) * (_jitterAmp * airT * envelope);
+            }
+
+            return pos;
+        }
+
+        public bool IsComplete(float t) => t >= 1f;
+    }
 }

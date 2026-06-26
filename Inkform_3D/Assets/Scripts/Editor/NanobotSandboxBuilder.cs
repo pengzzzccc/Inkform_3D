@@ -95,13 +95,14 @@ namespace Inkform.EditorTools
             director.ScanRadius = 8f;
             director.PossessableMask = 1 << possessableLayer;
             director.GroundMask = 1 << 0; // Default
-            // 束缚绑定参数
-            director.SurfaceOffset = 0.12f;
-            director.StrapCount = 4;
-            director.StrapTurns = 1f;
-            director.SubTentacleCount = 30;
-            director.SubTentacleLength = 0.5f;
-            director.SubTentacleRadius = 0.35f;
+            // 蔓延树参数（空中单主干 → 触面爆叉 → 表面均匀覆盖）
+            director.LeafCount = 64;
+            director.SurfaceSubdiv = 2;
+            director.BranchThickness = 0.3f;
+            director.JitterAmp = 0.3f;
+            director.JitterScale = 0.6f;
+            director.FlowSpeed = 0.4f;
+            director.Trail = 2f;
 
             // ── 反射探针：高金属度的洪流需要环境反射，否则发黑 ──
             var probeGo = new GameObject("Reflection Probe");

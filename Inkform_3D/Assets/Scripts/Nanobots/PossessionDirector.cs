@@ -43,11 +43,8 @@ namespace Inkform.Nanobots
 
         [Header("流动手感")]
         public float BlobSpeed = 1f;
-        [Tooltip("蔓延+立起的推进速度（小=慢、更 cinematic）。")]
+        [Tooltip("树状生长的推进速度（小=慢、更 cinematic）。")]
         public float PathSpeed = 0.35f;
-        public float WrapFormationSpeed = 1.2f;
-        [Tooltip("【已弃用】原 F 处蓄势停顿。现接触即包裹，不再使用。")]
-        public float FootHoldTime = 0f;
 
         [Header("附身/脱离")]
         [Tooltip("附身后蜂群贴附物体表面用的采样点数。")]
@@ -57,45 +54,21 @@ namespace Inkform.Nanobots
         [Tooltip("地面传送时控制体抬离地面高度（≈胶囊半高，防嵌地）。")]
         public float PlayerGroundOffset = 1.1f;
 
-        [Header("蔓延轨迹（A→F 贴地 + 分形）")]
-        [Tooltip("A→F 水平细分段数：越多越贴合地形起伏。")]
-        public int GroundSamples = 10;
-        [Tooltip("贴地离地高度，避免 bot 嵌进地面。")]
-        public float GroundClearance = 0.15f;
-        [Tooltip("支流数：行进时一股分成几股(1=不分叉)。")]
-        public int BranchCount = 4;
-        [Tooltip("支流最大横向张开间距（最外两股相距约 2 倍此值）。")]
-        public float BranchSpread = 2.5f;
-        [Tooltip("支流内分形细抖动幅度。")]
-        public float FractalAmp = 0.35f;
-        [Tooltip("分形噪声频率。")]
-        public float FractalScale = 1.5f;
-        [Tooltip("分形沿时间漂移速度，让虫群活起来。")]
+        [Header("蔓延树（预解算：空中单主干 → 触面爆叉 → 表面均匀覆盖）")]
+        [Tooltip("叶子末梢数：表面均匀终点个数（覆盖分辨率）。bot 按 i%LeafCount 分摊。")]
+        public int LeafCount = 64;
+        [Tooltip("表面段细分段数：>0 时把贴面段投影回最近表面点，避免切入凹陷(穿模)。")]
+        public int SurfaceSubdiv = 2;
+        [Tooltip("分支粗细：同叶多 bot 的横向簇宽。")]
+        public float BranchThickness = 0.3f;
+        [Tooltip("分形抖动幅度（本树纯贴面，抖动基本不生效，保留备用）。")]
+        public float JitterAmp = 0.3f;
+        [Tooltip("分形抖动噪声频率。")]
+        public float JitterScale = 0.6f;
+        [Tooltip("抖动沿时间漂移速度。")]
         public float FlowSpeed = 0.4f;
-        [Tooltip("队伍在路上拉散程度。")]
-        public float Trail = 0.35f;
-        [Tooltip("管中心线每米采样点数(越大管越平滑)。")]
-        public float CenterlineSamplesPerUnit = 4f;
-
-        [Header("束缚绑定（接触后）")]
-        [Tooltip("管心离物体表面的高度。")]
-        public float SurfaceOffset = 0.12f;
-        [Tooltip("贴表面爬行/束缚带每米采样点数。")]
-        public float SurfaceSamplesPerUnit = 6f;
-        [Tooltip("束缚带条数（绕物体缠绕的环）。")]
-        public int StrapCount = 4;
-        [Tooltip("束缚带绕物体的圈数（>1 为螺旋）。")]
-        public float StrapTurns = 1f;
-        [Tooltip("子触手数量。")]
-        public int SubTentacleCount = 30;
-        [Tooltip("子触手长度（米）。")]
-        public float SubTentacleLength = 0.5f;
-        [Tooltip("子触手相对主管的粗细倍数。")]
-        public float SubTentacleRadius = 0.35f;
-        [Tooltip("爬行段推进速度。")]
-        public float CrawlSpeed = 1.2f;
-        [Tooltip("束缚段推进速度。")]
-        public float BindSpeed = 1.2f;
+        [Tooltip("队伍在路上拉散程度（弧长单位）。")]
+        public float Trail = 2f;
 
         public State Current { get; private set; } = State.Wander;
 
@@ -103,6 +76,7 @@ namespace Inkform.Nanobots
         int _selected;
         Coroutine _co;
         Possessable _current;       // 当前附身物体（游荡时 null）
+        NanobotTree _tree;          // 当前预解算的蔓延树（供 Gizmos 可视化）
         PlayerMotor _motor;
         Rigidbody _playerRb;
 
@@ -250,57 +224,52 @@ namespace Inkform.Nanobots
 
             Current = State.Extend;
             SetControlFrozen(true);
+            _ = foot; // 落点 F 已在 Possess 闸门用过；树根在接触点 P，这里不再需要 F。
 
             // 附身→附身：先释放旧物体（留原地、还原碰撞与外观）。
             if (_current != null && _current != target) Release(_current);
             _current = null;
 
-            // ① 蔓延+立起：A→F→P 的 L 折线。蔓延段贴地起伏 + 分形涌动；
-            //    F 处硬转向是特意的（蔓延→立起的相变）。AB 不走。
+            // ① 触手伸出前**一次性预解算整棵蔓延树**：
+            //    起点 A(蜂群质心) → 空中单主干 → 接触点 P → 表面递归二分爆叉 → 表面均匀叶子。
+            //    airBranchDepth=0/outwardLift=0 → 整棵树贴面、空中不分叉；
+            //    surfaceSubdiv+projector → 表面段投影回最近表面点，分支不穿模；
+            //    最远点采样叶子 → 最终覆盖整表面均匀。树只发散不汇聚（分离后不回聚）。
             Vector3 a = Swarm.Centroid;
-            var path = BuildCrawlPath(a, foot, contact);
-            Swarm.SetFormation(new PathFlowFormation(path, Trail, BranchCount, BranchSpread,
-                FractalAmp, FractalScale, FlowSpeed), PathSpeed);
+            Vector3[] leaves = target.GetEvenSurfaceSamples(Mathf.Max(1, LeafCount), out _);
+            var projector = SurfaceSubdiv > 0 ? target.GetSurfaceProjector() : null;
+            var tree = NanobotTree.Build(start: a, leafPoints: leaves,
+                surfaceCenter: target.Bounds.center,
+                airBranchDepth: 0, outwardLift: 0f,
+                surfaceSubdiv: SurfaceSubdiv, projectToSurface: projector);
+            _tree = tree; // 供 Gizmos 验收
 
-            // 方管：用与支流相同的几何生成中心线，随形态进度向前生长。
-            if (Tubes != null) Tubes.SetBranches(BuildBranchCenterlines(path));
+            // ② 驱动蜂群沿树生长（统一生长前沿，bot 按 i%LeafCount 分摊到各叶路径）。
+            Swarm.SetFormation(new TreeBranchFormation(tree, Trail, BranchThickness,
+                JitterAmp, JitterScale, FlowSpeed), PathSpeed);
 
+            // ③ 驱动方管：抽取**不重叠**的分支中心线 + 根弧长偏移，按全局前沿深度推进生长。
+            if (Tubes != null)
+            {
+                float maxArc = tree.GetBranchPolylines(out var branches, out var startArcs);
+                var radii = new List<float>(branches.Count);
+                for (int i = 0; i < branches.Count; i++) radii.Add(1f);
+                Tubes.SetBranches(branches, radii, startArcs);
+                _ = maxArc;
+            }
+
+            // ④ 表面上色辅助：从接触点 P 起微发光收紧（不再是主包裹，纯辅助）。
+            target.BeginWrapShader(contact);
+
+            // 单一前沿推进：蜂群 Progress 同时驱动方管 Growth，主干先到、子枝后冒、铺满表面。
             while (!Swarm.FormationComplete)
             {
                 if (Tubes != null) Tubes.Growth = Swarm.Progress;
                 yield return null;
             }
-            if (Tubes != null) Tubes.Growth = 1f; // 管头到达 P
+            if (Tubes != null) Tubes.Growth = 1f;
 
-            // ② 接触表面：选表面目标点,管头沿表面爬行过去（mesh 为主的束缚开始）。
-            Vector3 wrapTarget = PickWrapTarget(target, contact);
-            var crawlSurface = BuildSurfaceWalk(target, contact, wrapTarget);
-
-            // 已长好的 A→F→P 主管(恒满,不重长) + 新的贴表面爬行段(从 P 生长到 wrapTarget)。
-            var mainAFP = GetMainPathPoints(path);
-            var moveBranches = new List<Vector3[]> { mainAFP, crawlSurface };
-            var moveRadii = new List<float> { 1f, 1f };
-            var moveGrows = new List<bool> { false, true };
-            if (Tubes != null) yield return GrowTubes(moveBranches, moveRadii, moveGrows, CrawlSpeed);
-
-            // ③ 束缚带 + 子触手生长（mesh 束缚绑定 + 周围微小子触手）。
-            //    主管(A→F→P + 爬行段)标记为恒满,只让束缚带与子触手随 Growth 长出。
-            var bindBranches = new List<Vector3[]> { mainAFP, crawlSurface };
-            var bindRadii = new List<float> { 1f, 1f };
-            var bindGrows = new List<bool> { false, false };
-            var straps = BuildBindingStraps(target, wrapTarget);
-            bindBranches.AddRange(straps);
-            for (int i = 0; i < straps.Count; i++) { bindRadii.Add(1f); bindGrows.Add(true); }
-            var subs = BuildSubTentacles(target, crawlSurface);
-            bindBranches.AddRange(subs);
-            for (int i = 0; i < subs.Count; i++) { bindRadii.Add(SubTentacleRadius); bindGrows.Add(true); }
-
-            // shader 辅助：表面从 wrapTarget 起微发光收紧（不再是主包裹）。
-            target.BeginWrapShader(wrapTarget);
-            if (Tubes != null) yield return GrowTubes(bindBranches, bindRadii, bindGrows, BindSpeed);
-            else yield return new WaitForSeconds(target.WrapDuration);
-
-            // ④ 控制转移：玩家贴合到物体并驾驶它；蜂群转为贴附其(移动中的)表面。
+            // ⑤ 控制转移：玩家贴合到物体并驾驶它；蜂群转为贴附其(移动中的)表面。
             target.OnPossessed();
             AttachControlTo(target);
             Current = State.Possess;
@@ -406,233 +375,6 @@ namespace Inkform.Nanobots
             return new Vector3(c.x, 0f, c.z);
         }
 
-        /// <summary>把若干中心线喂给管渲染器,Growth 0→1 推进(speed=每秒进度)。全部生长。</summary>
-        IEnumerator GrowTubes(List<Vector3[]> branches, List<float> radii, float speed)
-            => GrowTubes(branches, radii, null, speed);
-
-        /// <summary>同上,grows[i]=false 的条恒满(不随 Growth 重新长)。</summary>
-        IEnumerator GrowTubes(List<Vector3[]> branches, List<float> radii, List<bool> grows, float speed)
-        {
-            Tubes.SetBranches(branches, radii, grows);
-            float g = 0f;
-            while (g < 1f)
-            {
-                g = Mathf.Clamp01(g + Mathf.Max(0.01f, speed) * Time.deltaTime);
-                Tubes.Growth = g;
-                yield return null;
-            }
-            Tubes.Growth = 1f;
-        }
-
-        /// <summary>
-        /// 构造蔓延+立起路径：A → (贴地折线) → F → P。
-        /// A→F 段水平细分，每个中间点朝下 raycast 贴到地面（+离地高度），
-        /// 让路径顺着地形起伏；起点 A 用质心（保留从团里淌出的感觉），不强行贴地。
-        /// F→P 竖直立起段保留（硬转向特意为之）。
-        /// 接口预留：以后把这里的水平插值换成 NavMesh.CalculatePath 的 corner 序列即可，
-        /// PathFlowFormation 一行不用改。
-        /// </summary>
-        PolylinePath BuildCrawlPath(Vector3 a, Vector3 foot, Vector3 contact)
-        {
-            int n = Mathf.Max(1, GroundSamples);
-            var pts = new System.Collections.Generic.List<Vector3>(n + 2);
-            pts.Add(a);
-
-            // 在 A 与 F 之间按水平方向插点，每点贴地。k 从 1 起（A 已加）。
-            for (int k = 1; k <= n; k++)
-            {
-                float f = k / (float)n;                 // (0,1]
-                Vector3 lerp = Vector3.Lerp(a, foot, f); // 含线性 Y 作退化兜底
-                // 从足够高处朝下打，避免起点落在地形之下漏检。
-                Vector3 origin = new Vector3(lerp.x, Mathf.Max(a.y, foot.y) + 20f, lerp.z);
-                if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f,
-                        GroundMask, QueryTriggerInteraction.Ignore))
-                    pts.Add(hit.point + Vector3.up * GroundClearance);
-                else
-                    pts.Add(lerp); // 没命中地面：退化用线性插值点，不中断
-            }
-
-            // 末点确保是 F（贴地循环最后一点 f=1 已≈F，但显式收口更稳），再接 P。
-            pts[pts.Count - 1] = foot;
-            pts.Add(contact);
-            return new PolylinePath(pts.ToArray());
-        }
-
-        /// <summary>
-        /// 用与 PathFlowFormation 一致的支流数学，把主路径展开成 BranchCount 条中心线点序列，
-        /// 供方管渲染。横向偏移 = side * lane * BranchSpread * sin(π·s)：A 与 P 处收束、中段张开。
-        /// </summary>
-        List<Vector3[]> BuildBranchCenterlines(PolylinePath path)
-        {
-            int samples = Mathf.Max(2, Mathf.CeilToInt(path.TotalLength * CenterlineSamplesPerUnit) + 1);
-            int branches = Mathf.Max(1, BranchCount);
-            var result = new List<Vector3[]>(branches);
-
-            for (int b = 0; b < branches; b++)
-            {
-                float lane = branches > 1 ? (b / (float)(branches - 1) - 0.5f) * 2f : 0f; // [-1,1]
-                var line = new Vector3[samples];
-                for (int k = 0; k < samples; k++)
-                {
-                    float s = k / (float)(samples - 1);
-                    Vector3 basePos = path.PointAt01(s);
-                    if (branches > 1 && BranchSpread > 0f)
-                    {
-                        Vector3 tangent = path.TangentAt01(s);
-                        Vector3 side = Vector3.Cross(tangent, Vector3.up);
-                        if (side.sqrMagnitude < 1e-6f) side = Vector3.right;
-                        side.Normalize();
-                        float env = Mathf.Sin(Mathf.PI * s);
-                        basePos += side * (lane * BranchSpread * env);
-                    }
-                    line[k] = basePos;
-                }
-                result.Add(line);
-            }
-            return result;
-        }
-
-        // ───────────────────────── 束缚绑定（接触后） ─────────────────────────
-
-        /// <summary>主路径(A→F→P)的原始折线点。</summary>
-        static Vector3[] GetMainPathPoints(PolylinePath path)
-        {
-            var pts = path.Points;
-            var arr = new Vector3[pts.Count];
-            for (int i = 0; i < pts.Count; i++) arr[i] = pts[i];
-            return arr;
-        }
-
-        /// <summary>把世界点朝物体中心 raycast 贴到目标表面,返回表面点+法线*SurfaceOffset。失败返回原点。</summary>
-        bool SurfaceSnap(Possessable target, Vector3 worldPoint, out Vector3 onSurface)
-        {
-            Vector3 center = target.Bounds.center;
-            Vector3 toCenter = center - worldPoint;
-            float dist = toCenter.magnitude;
-            onSurface = worldPoint;
-            if (dist < 1e-4f) return false;
-            // 从物体外侧朝中心打：起点放在该点沿"远离中心"方向稍外。
-            Vector3 dir = toCenter / dist;
-            Vector3 origin = worldPoint - dir * 0.5f; // 略微退到表面外
-            if (Physics.Raycast(origin, dir, out RaycastHit hit, dist + 1f,
-                    PossessableMask, QueryTriggerInteraction.Ignore)
-                && hit.collider.GetComponentInParent<Possessable>() == target)
-            {
-                onSurface = hit.point + hit.normal * SurfaceOffset;
-                return true;
-            }
-            return false;
-        }
-
-        /// <summary>表面上确定性选一个"包裹目标点":取离接触点较远的一个表面采样点,凸显爬行距离。</summary>
-        Vector3 PickWrapTarget(Possessable target, Vector3 contact)
-        {
-            var samples = target.GetSurfaceSamples(64);
-            Vector3 best = contact;
-            float bestD = -1f;
-            foreach (var s in samples)
-            {
-                float d = (s - contact).sqrMagnitude;
-                if (d > bestD) { bestD = d; best = s; }
-            }
-            // 贴表面 + 离面一点。
-            return SurfaceSnap(target, best, out var onSurf) ? onSurf : best;
-        }
-
-        /// <summary>
-        /// 贴表面爬行路径 from→to:沿直线分段,每个中间点朝物体中心 raycast 贴到表面。
-        /// 失败的点退化为线性插值,不中断。
-        /// </summary>
-        Vector3[] BuildSurfaceWalk(Possessable target, Vector3 from, Vector3 to)
-        {
-            float len = Vector3.Distance(from, to);
-            int n = Mathf.Max(2, Mathf.CeilToInt(len * SurfaceSamplesPerUnit) + 1);
-            var line = new Vector3[n];
-            line[0] = from;
-            for (int k = 1; k < n; k++)
-            {
-                float f = k / (float)(n - 1);
-                Vector3 lerp = Vector3.Lerp(from, to, f);
-                line[k] = SurfaceSnap(target, lerp, out var onSurf) ? onSurf : lerp;
-            }
-            return line;
-        }
-
-        /// <summary>
-        /// 束缚带:绕物体生成 StrapCount 条环形/螺旋中心线,每点贴表面 → 多条交叉缠绕,绳索捆绑感。
-        /// 不同带绕不同轴 + 相位错开。
-        /// </summary>
-        List<Vector3[]> BuildBindingStraps(Possessable target, Vector3 around)
-        {
-            var result = new List<Vector3[]>();
-            Bounds b = target.Bounds;
-            Vector3 c = b.center;
-            float radius = b.extents.magnitude; // 椭球退化半径
-            int straps = Mathf.Max(1, StrapCount);
-            int ptsPerTurn = Mathf.Max(8, Mathf.CeilToInt(radius * 2f * Mathf.PI * SurfaceSamplesPerUnit));
-            int n = Mathf.Max(8, Mathf.CeilToInt(ptsPerTurn * Mathf.Max(1f, StrapTurns)));
-
-            for (int sI = 0; sI < straps; sI++)
-            {
-                // 每条带的绕轴:在世界轴间插值 + 确定性扰动,带与带交叉。
-                float aF = sI / (float)straps;
-                Vector3 axis = Vector3.Slerp(Vector3.up, Vector3.right, aF);
-                axis = Quaternion.AngleAxis(Hash.Unit(sI, 30) * 180f, Vector3.forward) * axis;
-                axis.Normalize();
-                Vector3 u = Vector3.Cross(axis, Vector3.up);
-                if (u.sqrMagnitude < 1e-4f) u = Vector3.Cross(axis, Vector3.right);
-                u.Normalize();
-                Vector3 v = Vector3.Cross(axis, u);
-                float phase = Hash.Unit(sI, 31) * Mathf.PI * 2f;
-
-                var line = new Vector3[n];
-                for (int k = 0; k < n; k++)
-                {
-                    float t = k / (float)(n - 1);
-                    float ang = phase + t * Mathf.PI * 2f * Mathf.Max(1f, StrapTurns);
-                    // 环上点(椭球面附近),再贴表面。
-                    Vector3 ringPt = c + (u * Mathf.Cos(ang) + v * Mathf.Sin(ang)) * radius;
-                    line[k] = SurfaceSnap(target, ringPt, out var onSurf) ? onSurf : ringPt;
-                }
-                result.Add(line);
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// 子触手:沿爬行/束缚路径确定性选点,每根生成一条短中心线(起点表面、向外+fBm 抖动)。
-        /// </summary>
-        List<Vector3[]> BuildSubTentacles(Possessable target, Vector3[] alongPath)
-        {
-            var result = new List<Vector3[]>();
-            if (alongPath == null || alongPath.Length < 2) return result;
-            Vector3 c = target.Bounds.center;
-            int count = Mathf.Max(0, SubTentacleCount);
-
-            for (int i = 0; i < count; i++)
-            {
-                // 沿爬行路径确定性取一个根点。
-                float f = Hash.Unit(i, 40);
-                int idx = Mathf.Clamp(Mathf.FloorToInt(f * (alongPath.Length - 1)), 0, alongPath.Length - 1);
-                Vector3 root = alongPath[idx];
-
-                // 方向:表面外法向(root 远离中心)+ fBm 抖动 → 向外摇曳。
-                Vector3 outward = (root - c);
-                if (outward.sqrMagnitude < 1e-4f) outward = Vector3.up;
-                outward.Normalize();
-                Vector3 wob = Hash.Fbm3(root * 2f + Vector3.one * i, 2);
-                Vector3 dir = (outward + wob * 0.6f).normalized;
-
-                float len = SubTentacleLength * (0.5f + Hash.Unit(i, 41));
-                var line = new Vector3[3];
-                line[0] = root;
-                line[1] = root + dir * (len * 0.5f) + wob * (len * 0.15f);
-                line[2] = root + dir * len + wob * (len * 0.25f);
-                result.Add(line);
-            }
-            return result;
-        }
-
         /// <summary>
         /// 求落点 F 与接触点 P（= 包裹入射点）。
         /// F = 目标包围盒中心朝下命中地面；P = 从 F 朝上命中目标表面（最低点）。
@@ -666,9 +408,21 @@ namespace Inkform.Nanobots
 
         void OnDrawGizmosSelected()
         {
-            if (Player == null) return;
-            Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.25f);
-            Gizmos.DrawWireSphere(Player.position, ScanRadius);
+            if (Player != null)
+            {
+                Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.25f);
+                Gizmos.DrawWireSphere(Player.position, ScanRadius);
+            }
+
+            // 预解算蔓延树：分叉线段 + 叶子末梢点（Play 模式选中本物体可见，便于验收
+            // 均匀覆盖与不穿插）。
+            if (_tree != null && _tree.LeafCount > 0)
+            {
+                Gizmos.color = new Color(0.2f, 1f, 0.6f, 0.8f);
+                foreach (var e in _tree.Edges) Gizmos.DrawLine(e.a, e.b);
+                Gizmos.color = new Color(1f, 0.7f, 0.2f, 1f);
+                foreach (var leaf in _tree.Leaves) Gizmos.DrawSphere(leaf, 0.06f);
+            }
         }
     }
 }

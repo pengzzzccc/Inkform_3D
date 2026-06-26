@@ -36,6 +36,10 @@ namespace Inkform.Nanobots
         readonly List<Vector3[]> _branches = new();
         readonly List<float> _branchRadius = new(); // 每条中心线的半径倍数(子触手更细)
         readonly List<bool> _branchGrows = new();   // true=随 Growth 生长; false=恒满(已长好的主管)
+        readonly List<float> _branchStartArc = new(); // 该条根弧长偏移(离总根 A)；仅前沿模式用
+        readonly List<float> _branchLen = new();      // 该条自身总弧长(缓存)
+        bool _frontMode;        // true=深度推进生长前沿(树); false=每条按自身比例生长(旧)
+        float _maxTotalArc;     // 前沿满量程 = max(startArc + len)
 
         // 预分配缓冲(随容量增长复用)。
         readonly List<Vector3> _verts = new();
@@ -68,11 +72,11 @@ namespace Inkform.Nanobots
 
         /// <summary>设置当前管网各支流中心线(世界点序列)。全部用统一管粗、随 Growth 生长。</summary>
         public void SetBranches(IReadOnlyList<Vector3[]> branchCenterlines)
-            => SetBranches(branchCenterlines, null, null);
+            => SetBranches(branchCenterlines, null, (IReadOnlyList<bool>)null);
 
         /// <summary>设置中心线 + 每条半径倍数(子触手传更小,如 0.35)。全部随 Growth 生长。</summary>
         public void SetBranches(IReadOnlyList<Vector3[]> branchCenterlines, IReadOnlyList<float> radiusMul)
-            => SetBranches(branchCenterlines, radiusMul, null);
+            => SetBranches(branchCenterlines, radiusMul, (IReadOnlyList<bool>)null);
 
         /// <summary>
         /// 设置中心线 + 半径倍数 + 是否随 Growth 生长。
@@ -85,6 +89,9 @@ namespace Inkform.Nanobots
             _branches.Clear();
             _branchRadius.Clear();
             _branchGrows.Clear();
+            _branchStartArc.Clear();
+            _branchLen.Clear();
+            _frontMode = false;
             if (branchCenterlines != null)
                 for (int i = 0; i < branchCenterlines.Count; i++)
                 {
@@ -96,12 +103,48 @@ namespace Inkform.Nanobots
                 }
         }
 
+        /// <summary>
+        /// 树状分支专用：每条带**根弧长偏移** startArc（离总根 A 的累计弧长）。
+        /// Growth 此时是**全局生长前沿**：front = Growth·maxTotalArc，每条只画
+        /// front-startArc 这一段（front≤startArc 不长、超过则截到自身长度）→
+        /// 主干先长、子枝按深度依次冒头，像一棵真的树在生长。
+        /// </summary>
+        public void SetBranches(IReadOnlyList<Vector3[]> branchCenterlines,
+            IReadOnlyList<float> radiusMul, IReadOnlyList<float> startArcs)
+        {
+            _branches.Clear();
+            _branchRadius.Clear();
+            _branchGrows.Clear();
+            _branchStartArc.Clear();
+            _branchLen.Clear();
+            _frontMode = true;
+            _maxTotalArc = 1e-4f;
+            if (branchCenterlines != null)
+                for (int i = 0; i < branchCenterlines.Count; i++)
+                {
+                    var b = branchCenterlines[i];
+                    if (b == null || b.Length < 2) continue;
+                    float len = 0f;
+                    for (int k = 1; k < b.Length; k++) len += Vector3.Distance(b[k - 1], b[k]);
+                    float sArc = startArcs != null && i < startArcs.Count ? startArcs[i] : 0f;
+                    _branches.Add(b);
+                    _branchRadius.Add(radiusMul != null && i < radiusMul.Count ? radiusMul[i] : 1f);
+                    _branchGrows.Add(true);
+                    _branchStartArc.Add(sArc);
+                    _branchLen.Add(len);
+                    _maxTotalArc = Mathf.Max(_maxTotalArc, sArc + len);
+                }
+        }
+
         /// <summary>清空管网(idle/结束)。</summary>
         public void Clear()
         {
             _branches.Clear();
             _branchRadius.Clear();
             _branchGrows.Clear();
+            _branchStartArc.Clear();
+            _branchLen.Clear();
+            _frontMode = false;
             _growth = 0f;
             if (_mesh != null) _mesh.Clear();
         }
@@ -112,9 +155,21 @@ namespace Inkform.Nanobots
 
             _verts.Clear(); _normals.Clear(); _colors.Clear(); _uvs.Clear(); _uv2.Clear(); _tris.Clear();
 
+            // 前沿模式(树)：全局前沿弧长，每条按 (front-startArc)/len 截。
+            float front = _frontMode ? _growth * _maxTotalArc : 0f;
+
             for (int i = 0; i < _branches.Count; i++)
             {
-                float g = _branchGrows[i] ? _growth : 1f;
+                float g;
+                if (_frontMode)
+                {
+                    float len = _branchLen[i];
+                    g = len > 1e-4f ? Mathf.Clamp01((front - _branchStartArc[i]) / len) : 0f;
+                }
+                else
+                {
+                    g = _branchGrows[i] ? _growth : 1f;
+                }
                 if (g <= 0f) continue;
                 AppendTube(_branches[i], g, _branchRadius[i]);
             }
