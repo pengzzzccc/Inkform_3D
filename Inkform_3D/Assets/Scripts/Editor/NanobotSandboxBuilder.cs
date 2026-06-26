@@ -81,6 +81,7 @@ namespace Inkform.EditorTools
             var director = swarmGo.AddComponent<PossessionDirector>();
             director.Swarm = swarm;
             director.Player = player.transform;
+            director.PlayerVisual = player.transform.Find("Body"); // 游荡显示/附身隐藏
             director.Input = player.GetComponent<InputReader>();
             director.ScanRadius = 8f;
             director.PossessableMask = 1 << possessableLayer;
@@ -105,10 +106,12 @@ namespace Inkform.EditorTools
             AssetDatabase.SaveAssets();
             Debug.Log($"[NanobotSandboxBuilder] 已生成并打开 {ScenePath}。");
             EditorUtility.DisplayDialog("Inkform — Nanobot Sandbox",
-                "纳米机器人附身沙盒已生成：\n" + ScenePath +
-                "\n\n操作：\n  WASD 移动（Space 跳）\n  E = 扫描 / 在候选间循环切换\n  鼠标左键 = 确认附身选中目标\n\n" +
-                "观察：纳米金属洪流 idle 跟随 → 扫描高亮 → 选定后贴地蔓延(沿速度拉成金属丝流) →\n" +
-                "立起接触 → 表面从底向上包裹生长。",
+                "纳米机器人生命周期沙盒已生成：\n" + ScenePath +
+                "\n\n操作：\n  WASD 移动，Space 跳（仅附身可跳）\n  Shift = 扫描 / 在候选间循环切换\n" +
+                "  E = 附身选中目标；附身中(无高亮)按 E = 脱离\n\n" +
+                "生命周期：游荡(成团跟随·不可跳) → Shift 扫描 → E 延伸树状生长 →\n" +
+                "附身(驾驶物体·相机跟随·可跳) → 附身中 Shift+E 可换目标(附身→附身) →\n" +
+                "附身中按 E 分支向地面点聚合成团 → 回游荡。",
                 "OK");
         }
 

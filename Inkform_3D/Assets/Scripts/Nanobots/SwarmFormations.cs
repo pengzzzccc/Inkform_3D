@@ -144,10 +144,12 @@ namespace Inkform.Nanobots
         readonly float _jitterAmp;    // 空中段分形抖动幅度
         readonly float _jitterScale;  // 抖动噪声频率
         readonly float _flowSpeed;    // 抖动沿时间漂移
+        readonly bool _reverse;       // 反向：从叶收敛回起点(脱离聚合成团)
         const int Octaves = 3;
 
         public TreeBranchFormation(NanobotTree tree, float trail = 2f, float thickness = 0.3f,
-            float jitterAmp = 0.3f, float jitterScale = 0.6f, float flowSpeed = 0.4f)
+            float jitterAmp = 0.3f, float jitterScale = 0.6f, float flowSpeed = 0.4f,
+            bool reverse = false)
         {
             _tree = tree;
             _maxLag = Mathf.Max(0f, trail);
@@ -155,6 +157,7 @@ namespace Inkform.Nanobots
             _jitterAmp = Mathf.Max(0f, jitterAmp);
             _jitterScale = Mathf.Max(0.01f, jitterScale);
             _flowSpeed = flowSpeed;
+            _reverse = reverse;
         }
 
         public Vector3 SampleTarget(int i, int count, float t)
@@ -164,9 +167,11 @@ namespace Inkform.Nanobots
             BotPath path = _tree.LeafPaths[i % L];
 
             // 生长前沿：统一物理推进弧长，lag 让队伍在路上拉成一条。
-            // t=1 时 front-lag ≥ MaxLen ≥ 任意 path.Length → 全员到达各自叶子。
+            // forward: t=1 时 front-lag ≥ MaxLen → 全员到各自叶子；
+            // reverse: t=1 时 front=0 → 全员收敛回起点(根=地面点 G)，聚合成团。
             float lag = Hash.Unit(i, 5) * _maxLag;
-            float front = t * (_tree.MaxLen + _maxLag);
+            float prog = _reverse ? (1f - t) : t;
+            float front = prog * (_tree.MaxLen + _maxLag);
             float arc = Mathf.Clamp(front - lag, 0f, path.Length);
             path.Sample(arc, out Vector3 pos, out float height, out Vector3 tangent);
 
@@ -224,5 +229,44 @@ namespace Inkform.Nanobots
         }
 
         public bool IsComplete(float t) => t >= 1f;
+    }
+
+    /// <summary>
+    /// 附身稳态形态：bot 贴在**移动中的**附身物体表面。
+    /// 表面点以物体**局部空间**存储，每帧用 obj.TransformPoint 还原 → 物体随玩家驾驶移动时
+    /// bot 跟着走。叠加极小确定性 idle 摆动让虫群"活"着。常驻不完成。
+    /// 局部点用延伸末态的同一批 leaves 反变换得到 → 附身瞬间与延伸无缝衔接。
+    /// </summary>
+    public sealed class WrapFollowFormation : ISwarmFormation
+    {
+        readonly Transform _obj;
+        readonly Vector3[] _local;
+        readonly float _wobble;
+
+        public WrapFollowFormation(Transform obj, Vector3[] localPoints, float wobble = 0.04f)
+        {
+            _obj = obj;
+            _local = (localPoints != null && localPoints.Length > 0)
+                ? localPoints
+                : new[] { Vector3.zero };
+            _wobble = wobble;
+        }
+
+        public Vector3 SampleTarget(int i, int count, float t)
+        {
+            Vector3 world = _obj != null
+                ? _obj.TransformPoint(_local[i % _local.Length])
+                : _local[i % _local.Length];
+
+            if (_wobble > 0f)
+            {
+                // 确定性相位 + 低频时间扰动（同一 i 相位固定，不每帧跳）。
+                float n = Mathf.PerlinNoise(Hash.Unit(i, 15) * 10f, Time.time * 0.7f) - 0.5f;
+                world += Hash.Direction(i) * (n * _wobble);
+            }
+            return world;
+        }
+
+        public bool IsComplete(float t) => false; // 附身稳态常驻
     }
 }

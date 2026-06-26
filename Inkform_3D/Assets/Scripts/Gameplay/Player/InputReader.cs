@@ -19,9 +19,10 @@ namespace Inkform.Gameplay
         public event Action UsePressed;
         public event Action JumpPressed;
         public event Action CrouchPressed;
+        public event Action ScanPressed;   // 附身扫描/切候选（绑 Sprint=LeftShift）
 
         InputActionMap _player;
-        InputAction _move, _interact, _use, _jump, _crouch;
+        InputAction _move, _interact, _use, _jump, _crouch, _scan;
 
         void Awake()
         {
@@ -37,6 +38,7 @@ namespace Inkform.Gameplay
             _use = _player.FindAction("Attack", true);
             _jump = _player.FindAction("Jump", false);
             _crouch = _player.FindAction("Crouch", false);
+            _scan = _player.FindAction("Sprint", false); // 复用 Sprint(LeftShift) 作扫描
         }
 
         void OnEnable()
@@ -49,6 +51,7 @@ namespace Inkform.Gameplay
             _use.performed += OnUse;
             if (_jump != null) _jump.performed += OnJump;
             if (_crouch != null) _crouch.performed += OnCrouch;
+            if (_scan != null) _scan.performed += OnScan;
         }
 
         void OnDisable()
@@ -60,6 +63,7 @@ namespace Inkform.Gameplay
             _use.performed -= OnUse;
             if (_jump != null) _jump.performed -= OnJump;
             if (_crouch != null) _crouch.performed -= OnCrouch;
+            if (_scan != null) _scan.performed -= OnScan;
             _player.Disable();
         }
 
@@ -68,5 +72,6 @@ namespace Inkform.Gameplay
         void OnUse(InputAction.CallbackContext c) => UsePressed?.Invoke();
         void OnJump(InputAction.CallbackContext c) => JumpPressed?.Invoke();
         void OnCrouch(InputAction.CallbackContext c) => CrouchPressed?.Invoke();
+        void OnScan(InputAction.CallbackContext c) => ScanPressed?.Invoke();
     }
 }

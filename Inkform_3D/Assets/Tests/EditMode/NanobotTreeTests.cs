@@ -141,6 +141,27 @@ namespace Inkform.Tests
         }
 
         [Test]
+        public void TreeBranchFormation_GrowthFront_ForwardAndReverse()
+        {
+            var pts = SpreadPoints(8);
+            var start = new Vector3(0f, 9f, 0f);
+            var tree = NanobotTree.Build(start, pts, Vector3.zero, 2, 2f, 0);
+
+            // 关掉粗细/抖动/拉散 → 纯生长前沿位置，确定性、不依赖 Time。
+            var fwd = new TreeBranchFormation(tree, trail: 0f, thickness: 0f, jitterAmp: 0f);
+            var rev = new TreeBranchFormation(tree, trail: 0f, thickness: 0f, jitterAmp: 0f,
+                reverse: true);
+            int n = 256;
+
+            // 正向(延伸)：t0 在起点 A，t1 到各自叶子末梢。
+            Assert.IsTrue(Approx(fwd.SampleTarget(0, n, 0f), start), "正向 t0 应在起点 A");
+            Assert.IsTrue(Approx(fwd.SampleTarget(0, n, 1f), pts[0]), "正向 t1 应在叶子");
+            // 反向(脱离聚合)：t0 在叶子，t1 收敛回起点(=地面点 G)。
+            Assert.IsTrue(Approx(rev.SampleTarget(0, n, 0f), pts[0]), "反向 t0 应在叶子");
+            Assert.IsTrue(Approx(rev.SampleTarget(0, n, 1f), start), "反向 t1 应收敛回起点 G");
+        }
+
+        [Test]
         public void BotPath_Sample_HitsStartAndLeaf_AndAdvances()
         {
             var pts = SpreadPoints(8);
