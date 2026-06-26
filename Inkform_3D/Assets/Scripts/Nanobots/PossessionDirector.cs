@@ -47,18 +47,24 @@ namespace Inkform.Nanobots
         public float PathSpeed = 0.35f;
 
         [Header("附身/脱离")]
-        [Tooltip("附身后蜂群贴附物体表面用的采样点数。")]
+        [Tooltip("【兜底】无蔓延树时，附身后蜂群贴附物体表面用的采样点数。")]
         public int WrapSampleCount = 64;
         [Tooltip("脱离时聚合地面点距物体的水平半径。")]
         public float DetachGroundRadius = 2.5f;
         [Tooltip("地面传送时控制体抬离地面高度（≈胶囊半高，防嵌地）。")]
         public float PlayerGroundOffset = 1.1f;
+        [Tooltip("附身后空中主干方管从根流空的时长（秒）。")]
+        public float TrunkDrainTime = 0.4f;
 
-        [Header("蔓延树（预解算：空中单主干 → 触面爆叉 → 表面均匀覆盖）")]
+        [Header("蔓延树（预解算：贴地爬到接触点 P → 触面爆叉 → 表面均匀覆盖）")]
         [Tooltip("叶子末梢数：表面均匀终点个数（覆盖分辨率）。bot 按 i%LeafCount 分摊。")]
         public int LeafCount = 64;
         [Tooltip("表面段细分段数：>0 时把贴面段投影回最近表面点，避免切入凹陷(穿模)。")]
         public int SurfaceSubdiv = 2;
+        [Tooltip("贴地主干每米细分点数：越大越贴合地形起伏。")]
+        public float GroundSamplesPerUnit = 2f;
+        [Tooltip("贴地主干离地高度，避免 bot 嵌进地面。")]
+        public float GroundClearance = 0.12f;
         [Tooltip("分支粗细：同叶多 bot 的横向簇宽。")]
         public float BranchThickness = 0.3f;
         [Tooltip("分形抖动幅度（本树纯贴面，抖动基本不生效，保留备用）。")]
@@ -230,18 +236,19 @@ namespace Inkform.Nanobots
             if (_current != null && _current != target) Release(_current);
             _current = null;
 
-            // ① 触手伸出前**一次性预解算整棵蔓延树**：
-            //    起点 A(蜂群质心) → 空中单主干 → 接触点 P → 表面递归二分爆叉 → 表面均匀叶子。
-            //    airBranchDepth=0/outwardLift=0 → 整棵树贴面、空中不分叉；
+            // ① 触手伸出前**一次性预解算整棵蔓延树**（全程贴面、不离地/不离面）：
+            //    蜂群 → **贴地爬行**到接触点 P(物体正下方贴地点) → 沿物体表面递归二分爆叉
+            //    → 表面均匀叶子。airBranchDepth=0/outwardLift=0 → 整棵树贴面、空中不分叉；
             //    surfaceSubdiv+projector → 表面段投影回最近表面点，分支不穿模；
-            //    最远点采样叶子 → 最终覆盖整表面均匀。树只发散不汇聚（分离后不回聚）。
-            Vector3 a = Swarm.Centroid;
+            //    最远点采样叶子 → 覆盖整表面均匀。树只发散不汇聚（分离后不回聚）。
+            Vector3[] trunkPath = BuildGroundCrawl(Swarm.Centroid, foot, contact);
             Vector3[] leaves = target.GetEvenSurfaceSamples(Mathf.Max(1, LeafCount), out _);
             var projector = SurfaceSubdiv > 0 ? target.GetSurfaceProjector() : null;
-            var tree = NanobotTree.Build(start: a, leafPoints: leaves,
+            var tree = NanobotTree.Build(start: trunkPath[0], leafPoints: leaves,
                 surfaceCenter: target.Bounds.center,
                 airBranchDepth: 0, outwardLift: 0f,
-                surfaceSubdiv: SurfaceSubdiv, projectToSurface: projector);
+                surfaceSubdiv: SurfaceSubdiv, projectToSurface: projector,
+                trunkPath: trunkPath);
             _tree = tree; // 供 Gizmos 验收
 
             // ② 驱动蜂群沿树生长（统一生长前沿，bot 按 i%LeafCount 分摊到各叶路径）。
@@ -272,6 +279,8 @@ namespace Inkform.Nanobots
             // ⑤ 控制转移：玩家贴合到物体并驾驶它；蜂群转为贴附其(移动中的)表面。
             target.OnPossessed();
             AttachControlTo(target);
+            // ⑥ 空中主干流空：bot 已转 WrapFollow 在身上，主干方管从根排空后清掉。
+            if (Tubes != null) StartCoroutine(DrainTrunkRoutine(TrunkDrainTime));
             Current = State.Possess;
             _current = target;
             _co = null;
@@ -285,42 +294,114 @@ namespace Inkform.Nanobots
             Current = State.Extend;
             SetControlFrozen(true);
 
+            // 物体旁地面汇聚点 G（落点也用它）。
             Vector3 ground = ComputeGroundPoint(obj);
 
             // 释放物体（解父、还原碰撞与外观），它停在原地。
             Release(obj);
             _current = null;
 
-            // 蜂群从物体表面聚合回地面点成团；管网清掉。
+            // ① 预解算「收束树」：贴地主干 G→(贴地爬)→物体接触点 P，再沿物体表面铺到叶 →
+            //    **反向**播放即「从表面分股贴面收回、贴地爬回 G」，全程不离面。
+            Vector3[] leaves = obj.GetEvenSurfaceSamples(Mathf.Max(1, LeafCount), out _);
+            var projector = SurfaceSubdiv > 0 ? obj.GetSurfaceProjector() : null;
+            // 物体接触点 P（贴面收束树的 root 邻接段终点）；求不到则退化用 G 直连。
+            Vector3[] trunkPath = ResolveFootAndContact(obj, out Vector3 dFoot, out Vector3 dContact)
+                ? BuildGroundCrawl(ground, dFoot, dContact)
+                : new[] { ground };
+            var tree = NanobotTree.Build(start: trunkPath[0], leafPoints: leaves,
+                surfaceCenter: obj.Bounds.center,
+                airBranchDepth: 0, outwardLift: 0f,
+                surfaceSubdiv: SurfaceSubdiv, projectToSurface: projector,
+                trunkPath: trunkPath);
+            _tree = tree; // 供 Gizmos
+
+            // ② 蜂群反向收束：bot 从各自表面叶子点沿树路径反向收缩 → 分股贴面蔓延汇到 G。
+            Swarm.SetFormation(new TreeBranchFormation(tree, Trail, BranchThickness,
+                JitterAmp, JitterScale, FlowSpeed, reverse: true), PathSpeed);
+
+            // ③ 方管同步：前沿 Growth 从 1→0（末梢=表面段先收、G-trunk 最后）跟随收束。
+            if (Tubes != null)
+            {
+                tree.GetBranchPolylines(out var branches, out var startArcs);
+                var radii = new List<float>(branches.Count);
+                for (int i = 0; i < branches.Count; i++) radii.Add(1f);
+                Tubes.SetBranches(branches, radii, startArcs);
+                Tubes.Drain = 0f;
+                Tubes.Growth = 1f;
+            }
+
+            // reverse 下 Progress=1 即全员回到 G。方管 Growth = 1-Progress 同步退潮。
+            while (!Swarm.FormationComplete)
+            {
+                if (Tubes != null) Tubes.Growth = 1f - Swarm.Progress;
+                yield return null;
+            }
             if (Tubes != null) Tubes.Clear();
+
+            // ④ 落地成团：bot 已在 G，转常驻团；控制体落到 G 旁地面，回游荡（不可跳）。
             Swarm.SetFormation(new BlobFormation(() => ground), BlobSpeed);
-
-            // 给聚合一点过渡时间（BlobFormation 常驻不会 Complete，靠 WrapDuration 兜一拍）。
-            yield return new WaitForSeconds(obj.WrapDuration);
-
-            // 控制体落到地面点，回游荡（不可跳）。
             MovePlayerTo(ground + Vector3.up * PlayerGroundOffset);
             _co = null;
             EnterWander();
         }
 
-        // 把玩家控制贴合到物体：玩家传送到物体、物体 parent 到玩家(随驾驶移动)、关物体碰撞、
-        // 蜂群转 WrapFollow（用目标表面采样点反变换到物体局部，随物体移动跟随）。
+        // 把玩家控制贴合到物体：物体 parent 到玩家(随驾驶移动)、关物体碰撞、玩家安全落位、
+        // 蜂群转 WrapFollow。贴附点用**蔓延末态的树叶子**(bot 蔓延时正落在这些点) → 附身瞬间
+        // 零跳变、流体无缝衔接到身上；反变换到物体局部 → 随驾驶移动整体跟随。
         void AttachControlTo(Possessable target)
         {
-            MovePlayerTo(target.transform.position);
+            // ① 先接管层级与碰撞（顺序确定，避免坐标系歧义）。
             target.transform.SetParent(Player, true);
             target.SetCollidersEnabled(false);
             if (PlayerVisual != null) PlayerVisual.gameObject.SetActive(false);
 
-            var worldSamples = target.GetSurfaceSamples(Mathf.Max(1, WrapSampleCount));
+            // ② 玩家安全落位：放到物体包围盒中心，但确保玩家胶囊底不嵌入地面/残留几何，
+            //    避免解冻刚体时被物理去穿插弹飞（带飞相机 → bot「闪掉」的根因）。
+            Bounds b = target.Bounds;
+            Vector3 safePos = new Vector3(b.center.x, b.max.y + PlayerGroundOffset, b.center.z);
+            MovePlayerTo(safePos);
+
+            // ③ 贴附点：优先蔓延末态的树叶子(无缝)；空/非法(NaN)兜底新采样；再兜底物体中心。
+            Vector3[] worldSamples = (_tree != null && _tree.LeafCount > 0 && IsFinite(_tree.Leaves[0]))
+                ? _tree.Leaves
+                : target.GetSurfaceSamples(Mathf.Max(1, WrapSampleCount));
+            if (worldSamples == null || worldSamples.Length == 0)
+                worldSamples = new[] { b.center };
+
             var local = new Vector3[worldSamples.Length];
             for (int i = 0; i < worldSamples.Length; i++)
                 local[i] = target.transform.InverseTransformPoint(worldSamples[i]);
             Swarm.SetFormation(new WrapFollowFormation(target.transform, local), 1f);
 
+            // ④ 解冻并切可跳 profile；清零速度防解冻瞬间残余冲量弹飞。
             SetControlFrozen(false);
+            if (_playerRb != null && !_playerRb.isKinematic)
+            {
+                _playerRb.linearVelocity = Vector3.zero;
+                _playerRb.angularVelocity = Vector3.zero;
+            }
             _motor?.ApplyProfile(PossessProfile); // 可跳
+        }
+
+        static bool IsFinite(Vector3 v) =>
+            !(float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z)
+              || float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z));
+
+        // 附身后主干从根流空：方管 Drain 0→1(离根近的 trunk 先被吃掉)，收净后清管。
+        // bot 流体此时已转 WrapFollow 贴在物体上 → 空中主干自然流走、只剩身上流体。
+        IEnumerator DrainTrunkRoutine(float duration)
+        {
+            if (Tubes == null) yield break;
+            float d = 0f;
+            float inv = 1f / Mathf.Max(0.01f, duration);
+            while (d < 1f)
+            {
+                d = Mathf.Clamp01(d + inv * Time.deltaTime);
+                Tubes.Drain = d;
+                yield return null;
+            }
+            Tubes.Clear();
         }
 
         // 释放物体：解除 parent、恢复碰撞、还原包裹外观、取消高亮。
@@ -352,6 +433,47 @@ namespace Inkform.Nanobots
                 _playerRb.position = pos;
                 if (!_playerRb.isKinematic) _playerRb.linearVelocity = Vector3.zero;
             }
+        }
+
+        /// <summary>
+        /// 贴地主干折线：从蜂群质心 a 到 foot(物体正下方贴地点)按 GroundSamplesPerUnit 细分，
+        /// 每个中间点朝下 raycast 贴 GroundMask（+离地 GroundClearance），失败退化线性插值；
+        /// 末点接 contact(P=物体最低表面点)。→ bot 沿地面爬到 P，全程不离地。
+        /// </summary>
+        Vector3[] BuildGroundCrawl(Vector3 a, Vector3 foot, Vector3 contact)
+        {
+            // 起点也贴地（蜂群可能略悬空）。
+            Vector3 start = SnapToGround(a, out Vector3 startOnGround) ? startOnGround : a;
+
+            float horiz = Vector3.Distance(new Vector3(start.x, 0f, start.z),
+                                           new Vector3(foot.x, 0f, foot.z));
+            int n = Mathf.Max(1, Mathf.CeilToInt(horiz * Mathf.Max(0.1f, GroundSamplesPerUnit)));
+
+            var pts = new List<Vector3>(n + 2) { start };
+            for (int k = 1; k <= n; k++)
+            {
+                float f = k / (float)n;
+                Vector3 lerp = Vector3.Lerp(start, foot, f);
+                pts.Add(SnapToGround(lerp, out Vector3 onGround) ? onGround : lerp);
+            }
+            // 显式收口到 foot(贴地)，再接 P(物体表面接触点)。
+            pts[pts.Count - 1] = SnapToGround(foot, out Vector3 footG) ? footG : foot;
+            pts.Add(contact);
+            return pts.ToArray();
+        }
+
+        // 把世界点朝下 raycast 贴到 GroundMask（+离地高度）。命中返回 true。
+        bool SnapToGround(Vector3 world, out Vector3 onGround)
+        {
+            Vector3 origin = new Vector3(world.x, world.y + 20f, world.z);
+            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f,
+                    GroundMask, QueryTriggerInteraction.Ignore))
+            {
+                onGround = hit.point + Vector3.up * GroundClearance;
+                return true;
+            }
+            onGround = world;
+            return false;
         }
 
         // 脱离聚合的地面点：物体周围随机水平偏移朝下命中地面；兜底物体正下方/原地。

@@ -95,9 +95,11 @@ namespace Inkform.EditorTools
             director.ScanRadius = 8f;
             director.PossessableMask = 1 << possessableLayer;
             director.GroundMask = 1 << 0; // Default
-            // 蔓延树参数（空中单主干 → 触面爆叉 → 表面均匀覆盖）
+            // 蔓延树参数（贴地爬到接触点 P → 触面爆叉 → 表面均匀覆盖）
             director.LeafCount = 64;
             director.SurfaceSubdiv = 2;
+            director.GroundSamplesPerUnit = 2f;
+            director.GroundClearance = 0.12f;
             director.BranchThickness = 0.3f;
             director.JitterAmp = 0.3f;
             director.JitterScale = 0.6f;

@@ -116,13 +116,19 @@ namespace Inkform.Nanobots
         }
 
         Node _root;             // 保留树根，供分支抽取（GetBranchPolylines）
-        Vector3 _start;         // 树干起点 A（root 的父）
+        Vector3[] _trunk;       // 共享主干折线（贴地爬行段），末点≈P，再接 root
 
         // 构建期上下文（避免层层传参）。
         int _surfaceSubdiv;
         Func<Vector3, Vector3> _project;
 
         /// <summary>构建生长树。参数见字段注释。</summary>
+        /// <param name="trunkPath">
+        /// 可选：从起点到 root 的**共享主干折线**（如蜂群→接触点 P 的贴地折线，
+        /// 最后一点≈P）。给了它 → 每条 bot 路径都以这条折线开头（贴地爬行段），
+        /// 之后才接 root→叶 的贴面段 → 全程贴面、空中无直管。
+        /// 为 null 时退化为单段直线 start→root（旧行为）。
+        /// </param>
         public static NanobotTree Build(
             Vector3 start,
             Vector3[] leafPoints,
@@ -130,14 +136,20 @@ namespace Inkform.Nanobots
             int airBranchDepth = 3,
             float outwardLift = 2.5f,
             int surfaceSubdiv = 2,
-            Func<Vector3, Vector3> projectToSurface = null)
+            Func<Vector3, Vector3> projectToSurface = null,
+            Vector3[] trunkPath = null)
         {
+            // 主干折线：有 trunkPath 用之（贴地爬行），否则单点 start（直线主干）。
+            Vector3[] trunk = (trunkPath != null && trunkPath.Length > 0)
+                ? trunkPath
+                : new[] { start };
+
             var tree = new NanobotTree
             {
                 OutwardLift = Mathf.Max(0f, outwardLift),
                 _surfaceSubdiv = Mathf.Max(0, surfaceSubdiv),
                 _project = projectToSurface,
-                _start = start,
+                _trunk = trunk,
             };
 
             int n = leafPoints != null ? leafPoints.Length : 0;
@@ -151,11 +163,15 @@ namespace Inkform.Nanobots
                 Mathf.Max(0, airBranchDepth), tree.OutwardLift);
             tree._root = root;
 
-            // 从 A 出发的共享树干。A 离面高度取 root 高度（视为空中段）。
-            tree.Edges.Add((start, root.Pos));
+            // 共享主干折线 → root。可视化用每段边。
+            for (int k = 1; k < trunk.Length; k++) tree.Edges.Add((trunk[k - 1], trunk[k]));
+            tree.Edges.Add((trunk[trunk.Length - 1], root.Pos));
+
+            // 每条 bot 路径都以主干折线开头(贴地/贴面、height 全 0)，再接 root→叶。
             tree.LeafPaths = new BotPath[n];
-            var posStack = new List<Vector3> { start };
-            var hStack = new List<float> { root.Height };
+            var posStack = new List<Vector3>(trunk);
+            var hStack = new List<float>(trunk.Length);
+            for (int k = 0; k < trunk.Length; k++) hStack.Add(0f);
             tree.Collect(root, posStack, hStack);
 
             float maxLen = 0f;
@@ -283,8 +299,8 @@ namespace Inkform.Nanobots
         ///
         /// 渲染器按全局前沿 front 推进时，front 超过某条 startArc 才开始长该条 →
         /// 主干先长、子枝后冒、最终铺满，像真的树在生长。
-        /// 第一条永远是空中主干 A→root(P)，startArc=0、不投影。
-        /// 返回值 = 总弧长上限（front 满量程，从 A 到最远叶的深度弧长）。
+        /// 第一条永远是共享主干折线(贴地爬行段)+P→root，startArc=0、不投影。
+        /// 返回值 = 总弧长上限（front 满量程，从 起点 到最远叶的深度弧长）。
         /// </summary>
         public float GetBranchPolylines(out List<Vector3[]> branches, out List<float> startArcs)
         {
@@ -293,11 +309,14 @@ namespace Inkform.Nanobots
             if (_root == null) return 0f;
 
             float maxTotal = 0f;
-            // ① 空中主干 A→root(P)：直管不投影。
-            var trunk = new[] { _start, _root.Pos };
-            branches.Add(trunk);
+            // ① 共享主干：贴地折线全段 + 末点→root(P→root.Pos)。直管不投影。
+            var trunkPts = new List<Vector3>(_trunk) { _root.Pos };
+            var trunkArr = trunkPts.ToArray();
+            branches.Add(trunkArr);
             startArcs.Add(0f);
-            float trunkArc = Vector3.Distance(_start, _root.Pos);
+            float trunkArc = 0f;
+            for (int k = 1; k < trunkArr.Length; k++)
+                trunkArc += Vector3.Distance(trunkArr[k - 1], trunkArr[k]);
             maxTotal = Mathf.Max(maxTotal, trunkArc);
 
             // ② 表面树：每条边一根（细分投影），startArc 沿深度累加。

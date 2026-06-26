@@ -56,6 +56,18 @@ namespace Inkform.Nanobots
             set => _growth = Mathf.Clamp01(value);
         }
 
+        float _drain;
+        /// <summary>
+        /// 从根排空进度（仅前沿模式有意义）：0=整条满；1=整条空。
+        /// drainFront = Drain·maxTotalArc，每条只画 [drainFront, startArc+len] 这段 →
+        /// 离根近的 trunk 段先被吃掉、surface 段最后 → 「流体从根往梢流走」。
+        /// </summary>
+        public float Drain
+        {
+            get => _drain;
+            set => _drain = Mathf.Clamp01(value);
+        }
+
         void Awake()
         {
             // mesh 顶点是世界空间 → 强制本物体单位变换，避免父级位置二次偏移。
@@ -146,6 +158,7 @@ namespace Inkform.Nanobots
             _branchLen.Clear();
             _frontMode = false;
             _growth = 0f;
+            _drain = 0f;
             if (_mesh != null) _mesh.Clear();
         }
 
@@ -155,23 +168,29 @@ namespace Inkform.Nanobots
 
             _verts.Clear(); _normals.Clear(); _colors.Clear(); _uvs.Clear(); _uv2.Clear(); _tris.Clear();
 
-            // 前沿模式(树)：全局前沿弧长，每条按 (front-startArc)/len 截。
+            // 前沿模式(树)：全局前沿弧长，每条画 [fromFrac, toFrac] 这段(自身长度归一)。
+            //   生长前沿 toFrac = (front-startArc)/len；根排空 fromFrac = (drainFront-startArc)/len。
             float front = _frontMode ? _growth * _maxTotalArc : 0f;
+            float drainFront = _frontMode ? _drain * _maxTotalArc : 0f;
 
             for (int i = 0; i < _branches.Count; i++)
             {
-                float g;
+                float fromFrac, toFrac;
                 if (_frontMode)
                 {
                     float len = _branchLen[i];
-                    g = len > 1e-4f ? Mathf.Clamp01((front - _branchStartArc[i]) / len) : 0f;
+                    if (len <= 1e-4f) continue;
+                    float sArc = _branchStartArc[i];
+                    toFrac = Mathf.Clamp01((front - sArc) / len);
+                    fromFrac = Mathf.Clamp01((drainFront - sArc) / len);
                 }
                 else
                 {
-                    g = _branchGrows[i] ? _growth : 1f;
+                    fromFrac = 0f;
+                    toFrac = _branchGrows[i] ? _growth : 1f;
                 }
-                if (g <= 0f) continue;
-                AppendTube(_branches[i], g, _branchRadius[i]);
+                if (toFrac - fromFrac <= 1e-4f) continue;
+                AppendTube(_branches[i], fromFrac, toFrac, _branchRadius[i]);
             }
 
             _mesh.Clear();
@@ -186,10 +205,11 @@ namespace Inkform.Nanobots
         }
 
         /// <summary>
-        /// 沿中心线挤一根方管，只到弧长 growth*总长 处。
+        /// 沿中心线挤一根方管，渲染弧长区间 [fromFrac, toFrac]·总长（自身长度归一）。
+        /// fromFrac>0 = 从根排空(只画后段)；toFrac<1 = 未长满(只画前段)。
         /// 平行传输坐标系防扭转；管头顶点色 a=1 做生长前沿发光。
         /// </summary>
-        void AppendTube(Vector3[] center, float growth, float radiusMul)
+        void AppendTube(Vector3[] center, float fromFrac, float toFrac, float radiusMul)
         {
             // 累计弧长 + 总长。
             int cn = center.Length;
@@ -197,21 +217,24 @@ namespace Inkform.Nanobots
             for (int k = 1; k < cn; k++) total += Vector3.Distance(center[k - 1], center[k]);
             if (total <= 1e-4f) return;
 
-            float grownLen = total * growth;
+            float fromArc = total * Mathf.Clamp01(fromFrac);
+            float toArc = total * Mathf.Clamp01(toFrac);
+            float span = toArc - fromArc;
+            if (span <= 1e-4f) return;
 
-            // 沿弧长按 RingsPerUnit 采样环；最后一环精确截到 grownLen。
-            int ringCount = Mathf.Max(2, Mathf.CeilToInt(grownLen * RingsPerUnit) + 1);
+            // 沿弧长按 RingsPerUnit 采样环；环覆盖 [fromArc, toArc]。
+            int ringCount = Mathf.Max(2, Mathf.CeilToInt(span * RingsPerUnit) + 1);
             int baseVert = _verts.Count;
 
-            // 平行传输：初始 up 取与首段切线尽量正交的轴。
-            Vector3 prevTangent = SampleTangent(center, total, 0f);
+            // 平行传输：初始 up 取与起点段切线尽量正交的轴。
+            Vector3 prevTangent = SampleTangent(center, total, fromArc);
             Vector3 up = Mathf.Abs(Vector3.Dot(prevTangent, Vector3.up)) > 0.95f
                 ? Vector3.right : Vector3.up;
             up = Vector3.Normalize(up - prevTangent * Vector3.Dot(up, prevTangent));
 
             for (int r = 0; r < ringCount; r++)
             {
-                float arc = grownLen * (r / (float)(ringCount - 1));
+                float arc = fromArc + span * (r / (float)(ringCount - 1));
                 float s01total = arc / total;                 // 在整条中心线上的弧长归一
                 Vector3 pos = SamplePoint(center, total, arc);
                 Vector3 tangent = SampleTangent(center, total, arc);
