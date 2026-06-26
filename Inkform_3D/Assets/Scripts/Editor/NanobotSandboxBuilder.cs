@@ -20,6 +20,7 @@ namespace Inkform.EditorTools
         const string WrapMatPath = "Assets/Settings/M_NanobotWrap.mat";
         const string BotMatPath = "Assets/Settings/M_NanobotBot.mat";
         const string InputAssetPath = "Assets/InputSystem_Actions.inputactions";
+        const string UntitledModelPath = "Assets/Model/Untitled.fbx";
 
         [MenuItem("Inkform/Sandbox/Build Nanobot Sandbox")]
         public static void Build()
@@ -58,6 +59,9 @@ namespace Inkform.EditorTools
             // ④ 不可附身反例：悬在地面 X 范围(±20)之外，正下方无地 → ResolveFootAndContact 失败。
             MakePossessable("Crate_NoGround", new Vector3(26f, 2f, 0f), new Vector3(2f, 2f, 2f),
                 possessableLayer, wrapMat);
+            // ⑤ FBX 模型（验证非 Primitive 表面采样 + 附身）
+            MakePossessableFromFBX("Untitled", new Vector3(-3f, 0f, 5f), Vector3.one * 2f,
+                possessableLayer, wrapMat, UntitledModelPath);
 
             // ── 玩家 ──
             var input = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
@@ -211,6 +215,42 @@ namespace Inkform.EditorTools
             go.layer = layer;
             go.GetComponent<Renderer>().sharedMaterial = wrapMat;
             go.AddComponent<Possessable>();
+        }
+
+        static void MakePossessableFromFBX(string name, Vector3 pos, Vector3 scale,
+            int layer, Material wrapMat, string modelPath)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[NanobotSandboxBuilder] 未找到 FBX 模型：{modelPath}");
+                return;
+            }
+
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            go.name = name;
+            go.transform.position = pos;
+            go.transform.localScale = scale;
+            SetLayerRecursive(go, layer);
+
+            foreach (var r in go.GetComponentsInChildren<Renderer>())
+                r.sharedMaterial = wrapMat;
+
+            if (go.GetComponentInChildren<Collider>() == null)
+            {
+                foreach (var mf in go.GetComponentsInChildren<MeshFilter>())
+                    mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
+            }
+
+            if (go.GetComponent<Possessable>() == null)
+                go.AddComponent<Possessable>();
+        }
+
+        static void SetLayerRecursive(GameObject go, int layer)
+        {
+            go.layer = layer;
+            foreach (Transform child in go.transform)
+                SetLayerRecursive(child.gameObject, layer);
         }
 
         // ───────────────────────── 材质 ─────────────────────────
