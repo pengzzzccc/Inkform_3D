@@ -60,7 +60,7 @@ namespace Inkform.EditorTools
             MakePossessable("Crate_NoGround", new Vector3(26f, 2f, 0f), new Vector3(2f, 2f, 2f),
                 possessableLayer, wrapMat);
             // ⑤ FBX 模型（验证非 Primitive 表面采样 + 附身）
-            MakePossessableFromFBX("Untitled", new Vector3(-3f, 0f, 5f), Vector3.one * 2f,
+            MakePossessableFromFBX("Untitled", new Vector3(-3f, 1f, 5f), Vector3.one * 10f,
                 possessableLayer, wrapMat, UntitledModelPath);
 
             // ── 玩家 ──
