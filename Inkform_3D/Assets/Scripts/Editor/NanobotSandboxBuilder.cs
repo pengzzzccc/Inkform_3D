@@ -60,7 +60,7 @@ namespace Inkform.EditorTools
             MakePossessable("Crate_NoGround", new Vector3(26f, 2f, 0f), new Vector3(2f, 2f, 2f),
                 possessableLayer, wrapMat);
             // ⑤ FBX 模型（验证非 Primitive 表面采样 + 附身）
-            MakePossessableFromFBX("Untitled", new Vector3(-3f, 1f, 5f), Vector3.one * 10f,
+            MakePossessableFromFBX("Untitled", new Vector3(-3f, 2f, 5f), Vector3.one * 50f,
                 possessableLayer, wrapMat, UntitledModelPath);
 
             // ── 玩家 ──
@@ -190,7 +190,7 @@ namespace Inkform.EditorTools
             vcam.Follow = target;
             vcam.Priority = 10;
             var follow = vcamGo.AddComponent<CinemachineFollow>();
-            follow.FollowOffset = new Vector3(0f, 5f, -14f);
+            follow.FollowOffset = new Vector3(0f, 3f, -14f);
         }
 
         // ───────────────────────── 可附身物体 ─────────────────────────
@@ -220,6 +220,13 @@ namespace Inkform.EditorTools
         static void MakePossessableFromFBX(string name, Vector3 pos, Vector3 scale,
             int layer, Material wrapMat, string modelPath)
         {
+            var importer = AssetImporter.GetAtPath(modelPath) as ModelImporter;
+            if (importer != null && !importer.isReadable)
+            {
+                importer.isReadable = true;
+                importer.SaveAndReimport();
+            }
+
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
             if (prefab == null)
             {
