@@ -1,58 +1,80 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Inkform.Nanobots
 {
     /// <summary>
-    /// 目标层：一个可被附身的物体。向编排层提供几何/表面采样/包裹控制。
-    /// 配套 NanobotWrap shader：被附身时从入射点 P 起把表面距离场 _Grow 0→1 扫满。
+    /// 目标层：一个可被附身的物体。向编排层提供几何/表面采样 + 扫描高亮/闪烁。
     /// 物体应放在 Possessable 层，且带 MeshFilter + Collider（求几何点用）。
+    /// 不再依赖任何自定义 shader：高亮/闪烁走标准 _EmissionColor。
     /// </summary>
     [RequireComponent(typeof(Renderer))]
     public class Possessable : MonoBehaviour
     {
-        [Header("包裹")]
-        [Tooltip("_Grow 从 0→1 的时长（秒）。")]
-        public float WrapDuration = 1.1f;
-
-        [Header("高亮（扫描命中时）")]
+        [Header("扫描提示")]
+        [Tooltip("被选中时的稳态高亮自发光。")]
         public Color HighlightEmission = new Color(0.3f, 0.8f, 1f) * 1.5f;
+        [Tooltip("被雷达检测到时闪一下的自发光。")]
+        public Color FlashEmission = new Color(0.4f, 1f, 1f) * 2.5f;
+        [Tooltip("闪一下的时长（秒）。")]
+        public float FlashDuration = 0.25f;
 
         Renderer _rend;
         MeshFilter _meshFilter;
-        Material _wrapMat;       // 实例化材质（避免 MaterialPropertyBlock 退出 SRP Batcher）
+        Material _mat;           // 实例化材质（避免 MaterialPropertyBlock 退出 SRP Batcher）
         Color _baseEmission;
         bool _hasEmission;
-        Coroutine _wrapCo;
+        bool _highlighted;
+        Coroutine _flashCo;
 
         public Bounds Bounds => _rend != null ? _rend.bounds : new Bounds(transform.position, Vector3.one);
 
-        static readonly int IdEntry = Shader.PropertyToID("_EntryPoint");
-        static readonly int IdMaxDist = Shader.PropertyToID("_MaxDist");
-        static readonly int IdGrow = Shader.PropertyToID("_Grow");
         static readonly int IdEmission = Shader.PropertyToID("_EmissionColor");
 
         void Awake()
         {
             _rend = GetComponent<Renderer>();
             _meshFilter = GetComponent<MeshFilter>();
-            // 实例化材质，独占编辑（material 访问会自动实例化）。
-            _wrapMat = _rend.material;
-            if (_wrapMat.HasProperty(IdGrow)) _wrapMat.SetFloat(IdGrow, 0f);
-            _hasEmission = _wrapMat.HasProperty(IdEmission);
-            if (_hasEmission) _baseEmission = _wrapMat.GetColor(IdEmission);
+            _mat = _rend.material; // 访问 material 自动实例化，独占编辑
+            _hasEmission = _mat.HasProperty(IdEmission);
+            if (_hasEmission) _baseEmission = _mat.GetColor(IdEmission);
         }
 
-        /// <summary>扫描高亮开关。</summary>
+        /// <summary>被选中的稳态高亮开关。</summary>
         public bool Highlighted
         {
-            set
+            get => _highlighted;
+            set { _highlighted = value; ApplyEmission(value ? HighlightEmission : _baseEmission); }
+        }
+
+        /// <summary>被雷达检测到时闪一下（之后回到高亮/基态）。</summary>
+        public void Flash()
+        {
+            if (!_hasEmission) return;
+            if (_flashCo != null) StopCoroutine(_flashCo);
+            _flashCo = StartCoroutine(FlashRoutine());
+        }
+
+        IEnumerator FlashRoutine()
+        {
+            float t = 0f;
+            float dur = Mathf.Max(0.01f, FlashDuration);
+            Color rest = _highlighted ? HighlightEmission : _baseEmission;
+            while (t < 1f)
             {
-                if (!_hasEmission) return;
-                _wrapMat.EnableKeyword("_EMISSION");
-                _wrapMat.SetColor(IdEmission, value ? HighlightEmission : _baseEmission);
+                t += Time.deltaTime / dur;
+                ApplyEmission(Color.Lerp(FlashEmission, rest, t));
+                yield return null;
             }
+            ApplyEmission(rest);
+            _flashCo = null;
+        }
+
+        void ApplyEmission(Color c)
+        {
+            if (!_hasEmission) return;
+            _mat.EnableKeyword("_EMISSION");
+            _mat.SetColor(IdEmission, c);
         }
 
         /// <summary>
@@ -128,66 +150,19 @@ namespace Inkform.Nanobots
             return result;
         }
 
-        /// <summary>
-        /// 启动包裹 shader 动画：入射点 P 在底部接触点，距离场从 P 向外扫满。
-        /// _MaxDist = P 到包围盒 8 角的最远距离（归一用）。
-        /// </summary>
-        public void BeginWrapShader(Vector3 entryPoint)
-        {
-            if (!_wrapMat.HasProperty(IdGrow))
-            {
-                Debug.LogWarning($"[Possessable] {name} 的材质没有 _Grow 属性，未使用 NanobotWrap shader？", this);
-                return;
-            }
-            _wrapMat.SetVector(IdEntry, entryPoint);
-            _wrapMat.SetFloat(IdMaxDist, FarthestCornerDistance(entryPoint));
-
-            if (_wrapCo != null) StopCoroutine(_wrapCo);
-            _wrapCo = StartCoroutine(GrowRoutine());
-        }
-
-        float FarthestCornerDistance(Vector3 p)
-        {
-            var b = Bounds;
-            Vector3 c = b.center, e = b.extents;
-            float max = 0f;
-            for (int sx = -1; sx <= 1; sx += 2)
-                for (int sy = -1; sy <= 1; sy += 2)
-                    for (int sz = -1; sz <= 1; sz += 2)
-                    {
-                        Vector3 corner = c + new Vector3(sx * e.x, sy * e.y, sz * e.z);
-                        max = Mathf.Max(max, Vector3.Distance(p, corner));
-                    }
-            return Mathf.Max(0.01f, max);
-        }
-
-        IEnumerator GrowRoutine()
-        {
-            float t = 0f;
-            float dur = Mathf.Max(0.01f, WrapDuration);
-            while (t < 1f)
-            {
-                t += Time.deltaTime / dur;
-                _wrapMat.SetFloat(IdGrow, Mathf.Clamp01(t));
-                yield return null;
-            }
-            _wrapMat.SetFloat(IdGrow, 1f);
-            _wrapCo = null;
-        }
-
-        /// <summary>包裹完成、附身生效。占位：切控制权 / 通知规则层。</summary>
+        /// <summary>附身生效。占位：切控制权 / 通知规则层（控制转移由编排层做）。</summary>
         public void OnPossessed()
         {
             Highlighted = false;
             Debug.Log($"[Possessable] {name} 已被附身。", this);
         }
 
-        // ─────────────────── 均匀表面采样 + 表面投影（供 NanobotTree 蔓延树） ───────────────────
+        // ─────────────────── 均匀表面采样 + 表面投影（供 SpreadPathSolver 蔓延触手） ───────────────────
 
         /// <summary>
         /// 均匀表面采样：先取面积加权稠密候选池，再用最远点采样(farthest-point)下采样到 count，
         /// 得到类 Poisson 的均匀分布。同时输出每点所在三角形的世界法线。
-        /// 这些点作为 NanobotTree 的叶子终点 → 保证最终覆盖整表面且均匀。
+        /// 这些点作为 SpreadPathSolver 的叶子终点 → 保证最终覆盖整表面且均匀。
         /// 无 mesh 时退化到 bounds 表面点（法线取 center→point 方向）。
         /// </summary>
         public Vector3[] GetEvenSurfaceSamples(int count, out Vector3[] normals)
@@ -275,8 +250,91 @@ namespace Inkform.Nanobots
         }
 
         /// <summary>
+        /// 噪点密度表面采样：返回 count 个**互不相同**的世界表面点，分布密度由程序化噪点图决定
+        /// （高噪点区更密、低噪点区更疏），用于附身全覆盖时让 cube 各自分散、有疏密有机感。
+        /// 做法：面积加权取三角形+重心点，再按 noise(point*scale)^contrast 接受-拒绝（带下限保证低密度区也有少量）。
+        /// 一次性生成（调用方缓存结果），用 UnityEngine.Random。无 mesh 退化到 bounds 表面随机点。
+        /// </summary>
+        public Vector3[] GetNoiseSurfaceSamples(int count, float noiseScale, float contrast)
+        {
+            if (count <= 0) return System.Array.Empty<Vector3>();
+
+            var mesh = _meshFilter != null ? _meshFilter.sharedMesh : null;
+            var verts = mesh != null ? mesh.vertices : null;
+            var tris = mesh != null ? mesh.triangles : null;
+            int triCount = (tris != null) ? tris.Length / 3 : 0;
+            if (triCount == 0 || verts.Length == 0) return NoiseBoundsFallback(count, noiseScale, contrast);
+
+            var l2w = transform.localToWorldMatrix;
+            var v0 = new Vector3[triCount];
+            var e1 = new Vector3[triCount];
+            var e2 = new Vector3[triCount];
+            var cumArea = new float[triCount];
+            float total = 0f;
+            for (int t = 0; t < triCount; t++)
+            {
+                Vector3 a = l2w.MultiplyPoint3x4(verts[tris[t * 3 + 0]]);
+                Vector3 b = l2w.MultiplyPoint3x4(verts[tris[t * 3 + 1]]);
+                Vector3 c = l2w.MultiplyPoint3x4(verts[tris[t * 3 + 2]]);
+                v0[t] = a; e1[t] = b - a; e2[t] = c - a;
+                total += 0.5f * Vector3.Cross(e1[t], e2[t]).magnitude;
+                cumArea[t] = total;
+            }
+            if (total <= 1e-6f) return NoiseBoundsFallback(count, noiseScale, contrast);
+
+            float floor = 0.15f; // 低密度区下限接受率
+            var result = new Vector3[count];
+            int produced = 0, guard = 0, maxGuard = count * 64;
+            while (produced < count && guard++ < maxGuard)
+            {
+                int t = LowerBound(cumArea, Random.value * total);
+                float u = Random.value, v = Random.value;
+                if (u + v > 1f) { u = 1f - u; v = 1f - v; }
+                Vector3 p = v0[t] + e1[t] * u + e2[t] * v;
+
+                float w = Mathf.Pow(Noise01(p * noiseScale), Mathf.Max(0.01f, contrast));
+                if (Random.value <= Mathf.Lerp(floor, 1f, w)) result[produced++] = p;
+            }
+            // guard 用尽仍未凑满：纯面积采样兜底补齐。
+            for (; produced < count; produced++)
+            {
+                int t = LowerBound(cumArea, Random.value * total);
+                float u = Random.value, v = Random.value;
+                if (u + v > 1f) { u = 1f - u; v = 1f - v; }
+                result[produced] = v0[t] + e1[t] * u + e2[t] * v;
+            }
+            return result;
+        }
+
+        Vector3[] NoiseBoundsFallback(int count, float noiseScale, float contrast)
+        {
+            var b = Bounds;
+            var result = new Vector3[count];
+            int produced = 0, guard = 0, maxGuard = count * 64;
+            while (produced < count && guard++ < maxGuard)
+            {
+                Vector3 dir = Random.onUnitSphere;
+                Vector3 p = b.center + Vector3.Scale(dir, b.extents);
+                float w = Mathf.Pow(Noise01(p * noiseScale), Mathf.Max(0.01f, contrast));
+                if (Random.value <= Mathf.Lerp(0.15f, 1f, w)) result[produced++] = p;
+            }
+            for (; produced < count; produced++)
+                result[produced] = b.center + Vector3.Scale(Random.onUnitSphere, b.extents);
+            return result;
+        }
+
+        /// <summary>程序化"随机噪点图"：三对坐标的 Perlin 取平均，返回 [0,1]。</summary>
+        static float Noise01(Vector3 p)
+        {
+            float a = Mathf.PerlinNoise(p.x, p.y);
+            float b = Mathf.PerlinNoise(p.y, p.z);
+            float c = Mathf.PerlinNoise(p.z, p.x);
+            return (a + b + c) / 3f;
+        }
+
+        /// <summary>
         /// 返回一个"把任意点投影到本物体最近表面点"的委托（一次性缓存世界空间三角形）。
-        /// 供 NanobotTree 把表面段细分点贴回表面，避免分支弦切入凹陷处（穿模）。
+        /// 供 SpreadPathSolver 把爬面段细分点贴回表面，避免分支弦切入凹陷处（穿模）。
         /// 无 mesh 时返回恒等委托（不投影）。
         /// </summary>
         public System.Func<Vector3, Vector3> GetSurfaceProjector()
@@ -369,13 +427,6 @@ namespace Inkform.Nanobots
                 current = bestIdx;
             }
             return picked;
-        }
-
-        /// <summary>脱离附身：停止包裹动画并把 _Grow 归 0，还原物体外观。</summary>
-        public void ResetWrap()
-        {
-            if (_wrapCo != null) { StopCoroutine(_wrapCo); _wrapCo = null; }
-            if (_wrapMat.HasProperty(IdGrow)) _wrapMat.SetFloat(IdGrow, 0f);
         }
 
         /// <summary>附身/脱离时开关自身碰撞体：附身期间关掉，避免与玩家胶囊复合碰撞冲突。</summary>

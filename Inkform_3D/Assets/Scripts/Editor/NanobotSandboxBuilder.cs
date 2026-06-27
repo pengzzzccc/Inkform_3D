@@ -11,14 +11,14 @@ namespace Inkform.EditorTools
 {
     /// <summary>
     /// 程序化搭建纳米机器人附身系统的验证沙盒。菜单：Inkform/Sandbox/Build Nanobot Sandbox。
-    /// 含：地面、玩家(WASD)、几个可附身物体(落地/悬空/隔挡)、swarm 根(身体+渲染+编排)。
-    /// 操作：WASD 移动、E 扫描/切候选、鼠标左键确认附身。
+    /// 含：地面、玩家(WASD)、几个可附身物体(落地/悬空/隔挡)、swarm 根(bot 积分+粒子渲染+编排)。
+    /// 操作：WASD 移动、雷达自动检测、1/2 选候选、E 附身、鼠标左键脱离。
     /// </summary>
     public static class NanobotSandboxBuilder
     {
         const string ScenePath = "Assets/Scenes/NanobotSandbox.unity";
-        const string WrapMatPath = "Assets/Settings/M_NanobotWrap.mat";
-        const string BotMatPath = "Assets/Settings/M_NanobotBot.mat";
+        const string PossessableMatPath = "Assets/Settings/M_Possessable.mat";
+        const string MetacubeMatPath = "Assets/Settings/M_Metacube.mat";
         const string InputAssetPath = "Assets/InputSystem_Actions.inputactions";
         const string UntitledModelPath = "Assets/Model/Untitled.fbx";
 
@@ -42,26 +42,26 @@ namespace Inkform.EditorTools
                 new Color(0.18f, 0.2f, 0.24f));
 
             // ── 材质 ──
-            var wrapMat = EnsureWrapMaterial();
-            var botMat = EnsureBotMaterial();
+            var possMat = EnsurePossessableMaterial();
+            var cubeMat = EnsureMetacubeMaterial();
 
             // ── 可附身物体 ──
             // ① 落地可附身（正常）
             MakePossessable("Crate_OK", new Vector3(4f, 1f, 0f), new Vector3(2f, 2f, 2f),
-                possessableLayer, wrapMat);
+                possessableLayer, possMat);
             // ② 落地可附身（球，验证非立方体表面采样）
-            MakePossessableSphere("Sphere_OK", new Vector3(7f, 1f, 3f), 2.2f, possessableLayer, wrapMat);
+            MakePossessableSphere("Sphere_OK", new Vector3(7f, 1f, 3f), 2.2f, possessableLayer, possMat);
             // ③ 高处目标（架在台子上）：F 落台顶、P 在其底，演示蔓延后竖直立起一大段。
             MakePossessable("Crate_OnLedge", new Vector3(-6f, 3.5f, 0f), new Vector3(2f, 2f, 2f),
-                possessableLayer, wrapMat);
+                possessableLayer, possMat);
             MakeBox("Ledge", new Vector3(-6f, 1.25f, 0f), new Vector3(3f, 2.5f, 3f), 0,
                 new Color(0.3f, 0.32f, 0.36f)); // 台子：目标 F 落在台顶
             // ④ 不可附身反例：悬在地面 X 范围(±20)之外，正下方无地 → ResolveFootAndContact 失败。
             MakePossessable("Crate_NoGround", new Vector3(26f, 2f, 0f), new Vector3(2f, 2f, 2f),
-                possessableLayer, wrapMat);
+                possessableLayer, possMat);
             // ⑤ FBX 模型（验证非 Primitive 表面采样 + 附身）
             MakePossessableFromFBX("Untitled", new Vector3(-3f, 2f, 5f), Vector3.one * 50f,
-                possessableLayer, wrapMat, UntitledModelPath);
+                possessableLayer, possMat, UntitledModelPath);
 
             // ── 玩家 ──
             var input = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputAssetPath);
@@ -69,46 +69,55 @@ namespace Inkform.EditorTools
                 Debug.LogWarning($"[NanobotSandboxBuilder] 未找到 {InputAssetPath}，请手动给 InputReader.Actions 赋值。");
             var player = BuildPlayer(input);
 
-            // ── Swarm 根（身体[求质心/进度] + 方管渲染 + 编排）──
-            var swarmGo = new GameObject("NanobotSwarm");
-            swarmGo.transform.position = player.transform.position;
-            var swarm = swarmGo.AddComponent<NanobotSwarm>();
-            swarm.Count = 64; // 只用于求质心/形态进度，不再画点粒
+            // ── Metacube 根（方块池：积分 + 脉冲 + 实例化绘制 + 编排）──
+            var cubeGo = new GameObject("NanobotMetacubes");
+            cubeGo.transform.position = player.transform.position;
+            var cubes = cubeGo.AddComponent<MetacubeSystem>();
+            cubes.Count = 1000;            // 固定总量的 metacube
+            cubes.CubeMaterial = cubeMat;
+            cubes.SmoothTime = 0.25f;
+            cubes.MinCubeSize = 0.06f;
+            cubes.MaxCubeSize = 0.18f;
+            cubes.PulseFreq = 1.5f;
+            cubes.PulseFreqJitter = 0.4f;
+            cubes.SizeJitter = 0.3f;
+            cubes.SpinSpeed = 18f;
 
-            // 方管渲染器（金属管网，替代点粒）。需要 MeshFilter+MeshRenderer。
-            // ⚠ mesh 顶点是世界空间 → 该 GO 必须在世界原点、单位变换，否则会被父级位置二次偏移。
-            var tubeGo = new GameObject("NanobotTubes", typeof(MeshFilter), typeof(MeshRenderer));
-            tubeGo.transform.position = Vector3.zero;
-            tubeGo.transform.rotation = Quaternion.identity;
-            tubeGo.transform.localScale = Vector3.one;
-            var tubes = tubeGo.AddComponent<NanobotTubeRenderer>();
-            tubes.TubeMaterial = botMat;
-            tubeGo.GetComponent<MeshRenderer>().sharedMaterial = botMat;
-            tubes.TubeSize = 0.3f;
-            tubes.RingsPerUnit = 12f;
-            tubes.SegmentsPerUnit = 3f;
-            tubes.SegmentRidge = 0.25f;
-            tubes.SegmentTwist = 22f;
+            // 常态本体即 metacube 半球团 → 隐藏玩家胶囊视觉体。
+            var body = player.transform.Find("Body");
+            if (body != null) body.gameObject.SetActive(false);
 
-            var director = swarmGo.AddComponent<PossessionDirector>();
-            director.Swarm = swarm;
+            var director = cubeGo.AddComponent<PossessionDirector>();
+            director.Cubes = cubes;
             director.Player = player.transform;
             director.Input = player.GetComponent<InputReader>();
-            director.PlayerVisual = player.transform.Find("Body"); // 游荡显示/附身隐藏
-            director.Tubes = tubes;
             director.ScanRadius = 8f;
             director.PossessableMask = 1 << possessableLayer;
             director.GroundMask = 1 << 0; // Default
-            // 蔓延树参数（贴地爬到接触点 P → 触面爆叉 → 表面均匀覆盖）
+            // 常态半球（含 聚合/离散 子态）
+            director.BlobRadius = 1.1f;
+            director.BlobSpeed = 1f;
+            director.BlobFlow = 0.5f;
+            director.BlobWobble = 0.18f;
+            director.IdleDispersion = 0.55f;
+            director.IdleBreathe = 0.12f;
+            director.DispersionLerpRate = 2.5f;
+            // 蔓延触手（梳状侧分支，全程贴面）
             director.LeafCount = 64;
             director.SurfaceSubdiv = 2;
             director.GroundSamplesPerUnit = 2f;
             director.GroundClearance = 0.12f;
-            director.BranchThickness = 0.3f;
-            director.JitterAmp = 0.3f;
-            director.JitterScale = 0.6f;
-            director.FlowSpeed = 0.4f;
-            director.Trail = 2f;
+            director.DepartMin = 0.2f;
+            director.DepartMax = 0.8f;
+            director.BranchThickness = 0.25f;
+            director.Trail = 1.5f;
+            director.SpreadSpeed = 0.5f;
+            director.SourcePointCount = 4;
+            // 附身/脱离
+            director.DetachGroundRadius = 2.5f;
+            director.PlayerGroundOffset = 1.1f;
+            director.CoverNoiseScale = 0.6f;
+            director.CoverNoiseContrast = 1.5f;
 
             // ── 反射探针：高金属度的洪流需要环境反射，否则发黑 ──
             var probeGo = new GameObject("Reflection Probe");
@@ -130,9 +139,10 @@ namespace Inkform.EditorTools
             Debug.Log($"[NanobotSandboxBuilder] 已生成并打开 {ScenePath}。");
             EditorUtility.DisplayDialog("Inkform — Nanobot Sandbox",
                 "纳米机器人附身沙盒已生成：\n" + ScenePath +
-                "\n\n操作：\n  WASD 移动（Space 跳）\n  E = 扫描 / 在候选间循环切换\n  鼠标左键 = 确认附身选中目标\n\n" +
-                "观察：扫描高亮 → 选定后金属方管从玩家处分叉成几股支流、管头发光地朝目标延伸生长 →\n" +
-                "到目标正下方竖直立起接触 → 表面从底向上包裹生长 → 管网消隐。",
+                "\n\n操作：\n  WASD 移动（Space 跳）\n  雷达自动检测附身物（检测到闪一下）\n" +
+                "  1 / 2 = 选上 / 下一个候选\n  E = 附身选中目标\n  鼠标左键 = 脱离（附身时）\n\n" +
+                "观察：聚合贴地半球(脉冲呼吸,离散↔聚合) → 选中按 E 贴地伸出梳状触手、侧分支离干平行 →\n" +
+                "各分支爬上目标表面随机点全覆盖铺满 → 附身后随驾驶整体跟随(可跳) → 脱离贴面收回成半球。",
                 "OK");
         }
 
@@ -195,30 +205,30 @@ namespace Inkform.EditorTools
 
         // ───────────────────────── 可附身物体 ─────────────────────────
 
-        static void MakePossessable(string name, Vector3 pos, Vector3 scale, int layer, Material wrapMat)
+        static void MakePossessable(string name, Vector3 pos, Vector3 scale, int layer, Material possMat)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = name;
             go.transform.position = pos;
             go.transform.localScale = scale;
             go.layer = layer;
-            go.GetComponent<Renderer>().sharedMaterial = wrapMat;
+            go.GetComponent<Renderer>().sharedMaterial = possMat;
             go.AddComponent<Possessable>();
         }
 
-        static void MakePossessableSphere(string name, Vector3 pos, float diameter, int layer, Material wrapMat)
+        static void MakePossessableSphere(string name, Vector3 pos, float diameter, int layer, Material possMat)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = name;
             go.transform.position = pos;
             go.transform.localScale = Vector3.one * diameter;
             go.layer = layer;
-            go.GetComponent<Renderer>().sharedMaterial = wrapMat;
+            go.GetComponent<Renderer>().sharedMaterial = possMat;
             go.AddComponent<Possessable>();
         }
 
         static void MakePossessableFromFBX(string name, Vector3 pos, Vector3 scale,
-            int layer, Material wrapMat, string modelPath)
+            int layer, Material possMat, string modelPath)
         {
             var importer = AssetImporter.GetAtPath(modelPath) as ModelImporter;
             if (importer != null && !importer.isReadable)
@@ -241,7 +251,7 @@ namespace Inkform.EditorTools
             SetLayerRecursive(go, layer);
 
             foreach (var r in go.GetComponentsInChildren<Renderer>())
-                r.sharedMaterial = wrapMat;
+                r.sharedMaterial = possMat;
 
             if (go.GetComponentInChildren<Collider>() == null)
             {
@@ -262,63 +272,49 @@ namespace Inkform.EditorTools
 
         // ───────────────────────── 材质 ─────────────────────────
 
-        static Material EnsureWrapMaterial()
+        // 可附身物体材质：标准 URP Lit（带 _EmissionColor，供 Possessable 高亮/闪烁）。不依赖自定义 shader。
+        static Material EnsurePossessableMaterial()
         {
             EnsureFolder("Assets/Settings");
-            var sh = Shader.Find("Inkform/NanobotWrap");
-            if (sh == null)
-            {
-                Debug.LogError("[NanobotSandboxBuilder] 找不到 Inkform/NanobotWrap shader，请确认已编译。");
-                sh = Shader.Find("Universal Render Pipeline/Lit");
-            }
-            var mat = AssetDatabase.LoadAssetAtPath<Material>(WrapMatPath);
+            var sh = Shader.Find("Universal Render Pipeline/Lit");
+            if (sh == null) sh = Shader.Find("Standard");
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(PossessableMatPath);
             if (mat == null)
             {
                 mat = new Material(sh);
-                AssetDatabase.CreateAsset(mat, WrapMatPath);
+                AssetDatabase.CreateAsset(mat, PossessableMatPath);
             }
             else if (mat.shader != sh) mat.shader = sh;
 
-            // shader 降级为辅助：possessed 反差小(只微变色),边缘发光收紧感保留。
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", new Color(0.55f, 0.57f, 0.62f));
-            if (mat.HasProperty("_PossessedColor")) mat.SetColor("_PossessedColor", new Color(0.42f, 0.5f, 0.62f));
-            if (mat.HasProperty("_EdgeColor")) mat.SetColor("_EdgeColor", new Color(0.4f, 0.9f, 1f) * 2f);
-            if (mat.HasProperty("_EdgeWidth")) mat.SetFloat("_EdgeWidth", 0.05f);
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.4f);
+            if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", Color.black);
             EditorUtility.SetDirty(mat);
             return mat;
         }
 
-        static Material EnsureBotMaterial()
+        // metacube 材质：普通 URP Lit 金属（开启 GPU 实例化）。无自定义 shader。
+        static Material EnsureMetacubeMaterial()
         {
             EnsureFolder("Assets/Settings");
-            var sh = Shader.Find("Inkform/NanobotFlow");
-            if (sh == null)
-            {
-                Debug.LogWarning("[NanobotSandboxBuilder] 找不到 Inkform/NanobotFlow shader，回退 URP Lit。");
-                sh = Shader.Find("Universal Render Pipeline/Lit");
-            }
+            var sh = Shader.Find("Universal Render Pipeline/Lit");
+            if (sh == null) sh = Shader.Find("Standard");
 
-            // 已存在则确保 shader 指向 NanobotFlow（否则重建场景还是旧材质）。
-            var mat = AssetDatabase.LoadAssetAtPath<Material>(BotMatPath);
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(MetacubeMatPath);
             if (mat == null)
             {
                 mat = new Material(sh);
-                AssetDatabase.CreateAsset(mat, BotMatPath);
+                AssetDatabase.CreateAsset(mat, MetacubeMatPath);
             }
-            else if (mat.shader != sh)
-            {
-                mat.shader = sh;
-            }
+            else if (mat.shader != sh) mat.shader = sh;
 
             mat.enableInstancing = true;
-            if (mat.HasProperty("_HeadColor")) mat.SetColor("_HeadColor", new Color(0.75f, 0.85f, 1f));
-            if (mat.HasProperty("_TailColor")) mat.SetColor("_TailColor", new Color(0.1f, 0.2f, 0.4f));
-            if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0.9f);
-            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.85f);
-            if (mat.HasProperty("_PanelColor")) mat.SetColor("_PanelColor", new Color(0.3f, 0.7f, 1f) * 2f);
-            if (mat.HasProperty("_PanelGlow")) mat.SetFloat("_PanelGlow", 2.2f);
-            if (mat.HasProperty("_PanelLengthwise")) mat.SetFloat("_PanelLengthwise", 2f);
-            if (mat.HasProperty("_PanelAround")) mat.SetFloat("_PanelAround", 1f);
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", new Color(0.7f, 0.78f, 0.9f));
+            if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0.85f);
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.75f);
+            // 暗场景里高金属度易发黑，给一点冷色自发光保底（配合场景反射探针）。
+            mat.EnableKeyword("_EMISSION");
+            if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", new Color(0.10f, 0.18f, 0.30f));
             EditorUtility.SetDirty(mat);
             return mat;
         }

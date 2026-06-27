@@ -7,7 +7,8 @@ namespace Inkform.Gameplay
     /// <summary>
     /// 读取现有 InputSystem_Actions 的 Player Map，向上暴露强类型事件。
     /// 无需为 inputactions 生成 C# 包装类：运行时按名查找 Action。
-    /// 映射：Move=移动 / Interact=扫描·还原 / Attack=使用能力 / Jump=跳 / Crouch=掩体。
+    /// 映射：Move=移动 / Interact(E)=附身·脱离确认 / Previous(1)·Next(2)=选上/下一个候选 /
+    ///       Attack=使用能力 / Jump=跳 / Crouch=掩体。
     /// </summary>
     public class InputReader : MonoBehaviour
     {
@@ -19,10 +20,11 @@ namespace Inkform.Gameplay
         public event Action UsePressed;
         public event Action JumpPressed;
         public event Action CrouchPressed;
-        public event Action ScanPressed;   // 附身扫描/切候选（绑 Sprint=LeftShift）
+        public event Action SelectPrevPressed;  // 选上一个候选（绑 Previous=键1）
+        public event Action SelectNextPressed;  // 选下一个候选（绑 Next=键2）
 
         InputActionMap _player;
-        InputAction _move, _interact, _use, _jump, _crouch, _scan;
+        InputAction _move, _interact, _use, _jump, _crouch, _prev, _next;
 
         void Awake()
         {
@@ -38,7 +40,8 @@ namespace Inkform.Gameplay
             _use = _player.FindAction("Attack", true);
             _jump = _player.FindAction("Jump", false);
             _crouch = _player.FindAction("Crouch", false);
-            _scan = _player.FindAction("Sprint", false); // 复用 Sprint(LeftShift) 作扫描
+            _prev = _player.FindAction("Previous", false); // 键1
+            _next = _player.FindAction("Next", false);      // 键2
         }
 
         void OnEnable()
@@ -51,7 +54,8 @@ namespace Inkform.Gameplay
             _use.performed += OnUse;
             if (_jump != null) _jump.performed += OnJump;
             if (_crouch != null) _crouch.performed += OnCrouch;
-            if (_scan != null) _scan.performed += OnScan;
+            if (_prev != null) _prev.performed += OnPrev;
+            if (_next != null) _next.performed += OnNext;
         }
 
         void OnDisable()
@@ -63,7 +67,8 @@ namespace Inkform.Gameplay
             _use.performed -= OnUse;
             if (_jump != null) _jump.performed -= OnJump;
             if (_crouch != null) _crouch.performed -= OnCrouch;
-            if (_scan != null) _scan.performed -= OnScan;
+            if (_prev != null) _prev.performed -= OnPrev;
+            if (_next != null) _next.performed -= OnNext;
             _player.Disable();
         }
 
@@ -72,6 +77,7 @@ namespace Inkform.Gameplay
         void OnUse(InputAction.CallbackContext c) => UsePressed?.Invoke();
         void OnJump(InputAction.CallbackContext c) => JumpPressed?.Invoke();
         void OnCrouch(InputAction.CallbackContext c) => CrouchPressed?.Invoke();
-        void OnScan(InputAction.CallbackContext c) => ScanPressed?.Invoke();
+        void OnPrev(InputAction.CallbackContext c) => SelectPrevPressed?.Invoke();
+        void OnNext(InputAction.CallbackContext c) => SelectNextPressed?.Invoke();
     }
 }

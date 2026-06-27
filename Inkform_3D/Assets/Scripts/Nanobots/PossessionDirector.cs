@@ -7,86 +7,81 @@ using Inkform.Data;
 namespace Inkform.Nanobots
 {
     /// <summary>
-    /// 编排层：纳米机器人生命周期状态机 + 玩家主控角色。
-    /// 三状态：游荡 Wander ↔ 延伸 Extend ↔ 附身 Possess。所有切换都经过延伸。
-    ///   · 游荡：蜂群成团跟随控制体(Player)，不可跳。
-    ///   · 延伸：蔓延管线（贴地分叉立起 + 方管 + 束缚带 + 子触手）把身体送到目标并包裹，玩家冻结。
-    ///   · 附身：控制体贴合到物体，物体随 WASD 驾驶移动、相机跟随、可跳；蜂群贴附其表面。
-    /// 输入：Shift=扫描/切候选；E=附身选中目标(有高亮) 或 脱离(附身中无高亮)。
+    /// 编排层：nanobot(metacube) 生命周期状态机（按 Docs/nanobot-metacube.md）。
+    /// 三态：聚合 Idle ↔ 蔓延 Spreading ↔ 附身 Possessed。
+    ///   · 聚合：metacube 成贴地半球团跟随玩家（不可跳）；雷达持续检测可附身物、检测到闪一下。
+    ///           子态 聚合/离散 由 AggregateForm.Dispersion 驱动（有选中→聚合收紧；无→离散松散）。
+    ///   · 蔓延：预解算梳状触手（贴地主干 + 侧分支平行 + 爬面到随机表面点），cube 沿之生长。
+    ///   · 附身：物体成化身随 WASD 驾驶（可跳）；cube 全覆盖贴附其表面跟随。
+    /// 输入：1/2 选上/下一个候选；E 附身选中目标；Attack 脱离。
     ///
-    /// 身体层(NanobotSwarm)和目标层(Possessable)互不知道对方，全靠这里编排。
-    /// 几何即谜题规则：ResolveFootAndContact 的任一 raycast 失败 = 不可附身
-    /// （悬空/底下没地/隔玻璃自动被排除，不另写可附身判定）。
-    /// 跳跃由 MovementProfile.CanJump 把关：游荡 false、附身 true。
+    /// 几何即规则：ResolveFootAndContact 任一 raycast 失败 = 不可附身。
     /// </summary>
     public class PossessionDirector : MonoBehaviour
     {
-        public enum State { Wander, Extend, Possess }
+        public enum State { Idle, Spreading, Possessed }
 
         [Header("引用")]
-        public NanobotSwarm Swarm;
+        public MetacubeSystem Cubes;
         public Transform Player;
-        [Tooltip("玩家视觉体（游荡时显示=蜂群的核；附身时隐藏，物体即化身）。")]
-        public Transform PlayerVisual;
-        [Tooltip("可选：监听 Shift=扫描 / E=附身·脱离。留空则只能脚本调用。")]
+        [Tooltip("可选：监听 1/2 选择、E 附身/脱离确认、Attack 脱离。留空则只能脚本调用。")]
         public InputReader Input;
-        [Tooltip("可选：方管渲染器。留空则不画管。")]
-        public NanobotTubeRenderer Tubes;
 
-        [Header("扫描")]
-        [Tooltip("以玩家为中心的扫描半径。")]
-        public float ScanRadius = 7f;
-        [Tooltip("可附身物体所在层。")]
+        [Header("雷达")]
+        [Tooltip("以玩家为中心的检测半径。")]
+        public float ScanRadius = 8f;
+        [Tooltip("检测节流间隔（秒）。")]
+        public float ScanInterval = 0.25f;
         public LayerMask PossessableMask;
-        [Tooltip("地面层（求目标正下方落点 F / 脱离聚合的地面点用）。")]
         public LayerMask GroundMask;
 
-        [Header("流动手感")]
+        [Header("聚合半球")]
+        public float BlobRadius = 1.1f;
         public float BlobSpeed = 1f;
-        [Tooltip("树状生长的推进速度（小=慢、更 cinematic）。")]
-        public float PathSpeed = 0.35f;
+        public float BlobFlow = 0.5f;
+        [Tooltip("半球表面低频起伏幅度（呼吸感）。")]
+        public float BlobWobble = 0.18f;
+        [Tooltip("无选中目标时的离散程度（0..1）。有选中时收紧到 0。")]
+        public float IdleDispersion = 0.55f;
+        [Tooltip("无目标时离散度的低频呼吸幅度（叠加在 IdleDispersion 上）。")]
+        public float IdleBreathe = 0.12f;
+        [Tooltip("聚合/离散 平滑切换速率（每秒）。")]
+        public float DispersionLerpRate = 2.5f;
+
+        [Header("蔓延触手（梳状侧分支，全程贴面）")]
+        public int LeafCount = 64;
+        public int SurfaceSubdiv = 2;
+        public float GroundSamplesPerUnit = 2f;
+        public float GroundClearance = 0.12f;
+        public float DepartMin = 0.2f;
+        public float DepartMax = 0.8f;
+        public float BranchThickness = 0.25f;
+        public float Trail = 1.5f;
+        public float SpreadSpeed = 0.5f;
+        public int SourcePointCount = 4;
 
         [Header("附身/脱离")]
-        [Tooltip("【兜底】无蔓延树时，附身后蜂群贴附物体表面用的采样点数。")]
-        public int WrapSampleCount = 64;
-        [Tooltip("脱离时聚合地面点距物体的水平半径。")]
         public float DetachGroundRadius = 2.5f;
-        [Tooltip("地面传送时控制体抬离地面高度（≈胶囊半高，防嵌地）。")]
         public float PlayerGroundOffset = 1.1f;
-        [Tooltip("附身后空中主干方管从根流空的时长（秒）。")]
-        public float TrunkDrainTime = 0.4f;
+        [Tooltip("全覆盖分布噪点缩放：大=斑块细碎、小=大片疏密。")]
+        public float CoverNoiseScale = 0.6f;
+        [Tooltip("全覆盖疏密对比：大=疏密反差强。")]
+        public float CoverNoiseContrast = 1.5f;
 
-        [Header("蔓延树（预解算：贴地爬到接触点 P → 触面爆叉 → 表面均匀覆盖）")]
-        [Tooltip("叶子末梢数：表面均匀终点个数（覆盖分辨率）。bot 按 i%LeafCount 分摊。")]
-        public int LeafCount = 64;
-        [Tooltip("表面段细分段数：>0 时把贴面段投影回最近表面点，避免切入凹陷(穿模)。")]
-        public int SurfaceSubdiv = 2;
-        [Tooltip("贴地主干每米细分点数：越大越贴合地形起伏。")]
-        public float GroundSamplesPerUnit = 2f;
-        [Tooltip("贴地主干离地高度，避免 bot 嵌进地面。")]
-        public float GroundClearance = 0.12f;
-        [Tooltip("分支粗细：同叶多 bot 的横向簇宽。")]
-        public float BranchThickness = 0.3f;
-        [Tooltip("分形抖动幅度（本树纯贴面，抖动基本不生效，保留备用）。")]
-        public float JitterAmp = 0.3f;
-        [Tooltip("分形抖动噪声频率。")]
-        public float JitterScale = 0.6f;
-        [Tooltip("抖动沿时间漂移速度。")]
-        public float FlowSpeed = 0.4f;
-        [Tooltip("队伍在路上拉散程度（弧长单位）。")]
-        public float Trail = 2f;
-
-        public State Current { get; private set; } = State.Wander;
+        public State Current { get; private set; } = State.Idle;
 
         readonly List<Possessable> _candidates = new();
-        int _selected;
-        Coroutine _co;
-        Possessable _current;       // 当前附身物体（游荡时 null）
-        NanobotTree _tree;          // 当前预解算的蔓延树（供 Gizmos 可视化）
+        readonly HashSet<Possessable> _detected = new(); // 已检测集合（只对新进的闪）
+        Possessable _selectedTarget;                     // 当前选中（引用稳定，跨重排）
+        Possessable _current;                            // 当前附身物体（常态 null）
+        AggregateForm _aggregate;                        // 常态形态（用于实时调 Dispersion）
+        SpreadPathSolver _solver;                        // 蔓延路径（供 Gizmos）
+        Coroutine _co;                                   // 蔓延/脱离协程
         PlayerMotor _motor;
         Rigidbody _playerRb;
+        Camera _cam;                                     // 脱离落点朝向用
+        float _scanTimer;
 
-        // 两套移动 profile：唯一差别是 CanJump（游荡不可跳、附身可跳）。
         static readonly MovementProfile WanderProfile = new()
         { MoveSpeedMul = 1f, MassMul = 1f, JumpHeightMul = 1f, Buoyancy = 0f, Drag = 0f, CanJump = false };
         static readonly MovementProfile PossessProfile = new()
@@ -99,15 +94,17 @@ namespace Inkform.Nanobots
                 _motor = Player.GetComponent<PlayerMotor>();
                 _playerRb = Player.GetComponent<Rigidbody>();
             }
-            EnterWander();
+            EnterIdle();
         }
 
         void OnEnable()
         {
             if (Input != null)
             {
-                Input.ScanPressed += OnScan;
+                Input.SelectPrevPressed += OnSelectPrev;
+                Input.SelectNextPressed += OnSelectNext;
                 Input.InteractPressed += OnConfirm;
+                Input.UsePressed += OnDetachKey;
             }
         }
 
@@ -115,106 +112,132 @@ namespace Inkform.Nanobots
         {
             if (Input != null)
             {
-                Input.ScanPressed -= OnScan;
+                Input.SelectPrevPressed -= OnSelectPrev;
+                Input.SelectNextPressed -= OnSelectNext;
                 Input.InteractPressed -= OnConfirm;
+                Input.UsePressed -= OnDetachKey;
             }
         }
 
-        // ── 输入 ──
-        // Shift：未扫描则开扫并高亮最近，已扫描则循环切候选。延伸过程中忽略。
-        void OnScan()
+        void Update()
         {
-            if (Current == State.Extend) return;
-            if (_candidates.Count == 0) BeginScan();
-            else CycleCandidate();
+            // 蔓延中不扫描；常态/附身持续雷达检测。
+            if (Current != State.Spreading)
+            {
+                _scanTimer -= Time.deltaTime;
+                if (_scanTimer <= 0f) { _scanTimer = Mathf.Max(0.05f, ScanInterval); ScanTick(); }
+            }
+
+            // 子态 聚合/离散：有选中→收紧聚合(0)，无→离散(IdleDispersion + 低频呼吸)。
+            if (_aggregate != null && Current == State.Idle)
+            {
+                float target = _selectedTarget != null
+                    ? 0f
+                    : Mathf.Clamp01(IdleDispersion + Mathf.Sin(Time.time * 0.6f) * IdleBreathe);
+                _aggregate.Dispersion = Mathf.MoveTowards(_aggregate.Dispersion, target,
+                    DispersionLerpRate * Time.deltaTime);
+            }
         }
 
-        // E：有高亮候选 → 附身它（游荡→附身 / 附身→附身）；否则附身中 → 脱离。
-        void OnConfirm()
+        // ── 雷达 ──
+        // 检测范围内可附身物（排除当前附身物）；新进的闪一下；维护候选列表与选中项。
+        void ScanTick()
         {
-            if (Current == State.Extend) return;
-            if (_candidates.Count > 0) Possess(_candidates[_selected]);
-            else if (_current != null) Detach();
-        }
-
-        // ── 状态 ──
-
-        void EnterWander()
-        {
-            ClearHighlights();
+            if (Player == null) return;
             _candidates.Clear();
-            _current = null;
-            Current = State.Wander;
-            SetControlFrozen(false);
-            _motor?.ApplyProfile(WanderProfile);   // 不可跳
-            if (PlayerVisual != null) PlayerVisual.gameObject.SetActive(true);
-            if (Tubes != null) Tubes.Clear();
-            if (Swarm != null && Player != null)
-                Swarm.SetFormation(new BlobFormation(() => Player.position), BlobSpeed);
-        }
-
-        /// <summary>开扫：以玩家为中心找范围内可附身物体并高亮（排除当前附身物）。</summary>
-        public void BeginScan()
-        {
-            if (Swarm == null || Player == null) return;
-            _candidates.Clear();
-            ClearHighlights();
 
             var hits = Physics.OverlapSphere(Player.position, ScanRadius, PossessableMask,
                 QueryTriggerInteraction.Ignore);
+            var seen = new HashSet<Possessable>();
             foreach (var c in hits)
             {
                 var p = c.GetComponentInParent<Possessable>();
-                if (p != null && p != _current && !_candidates.Contains(p)) _candidates.Add(p);
+                if (p == null || p == _current || !seen.Add(p)) continue;
+                _candidates.Add(p);
+                if (!_detected.Contains(p)) p.Flash(); // 新检测到 → 闪一下
             }
+            // 更新已检测集合（移除离开范围的，便于再次进入时重新闪）。
+            _detected.Clear();
+            foreach (var p in _candidates) _detected.Add(p);
 
-            if (_candidates.Count == 0)
-            {
-                Debug.Log("[PossessionDirector] 扫描范围内无可附身物体。");
-                return;
-            }
-
-            // 默认选最近的
             _candidates.Sort((a, b) =>
                 (a.transform.position - Player.position).sqrMagnitude
                 .CompareTo((b.transform.position - Player.position).sqrMagnitude));
-            _selected = 0;
-            RefreshHighlight();
-            Debug.Log($"[PossessionDirector] 扫描到 {_candidates.Count} 个候选。Shift 切换，E 确认。");
-        }
 
-        void CycleCandidate()
-        {
-            if (_candidates.Count == 0) return;
-            _selected = (_selected + 1) % _candidates.Count;
+            // 选中项：常态默认选最近；附身态不自动选（默认无选中→E 即脱离）。
+            if (_selectedTarget != null && !_candidates.Contains(_selectedTarget))
+                _selectedTarget = null;
+            if (_selectedTarget == null && Current == State.Idle && _candidates.Count > 0)
+                _selectedTarget = _candidates[0];
+
             RefreshHighlight();
         }
 
         void RefreshHighlight()
         {
-            for (int i = 0; i < _candidates.Count; i++)
-                _candidates[i].Highlighted = (i == _selected);
+            foreach (var p in _candidates) if (p != null) p.Highlighted = (p == _selectedTarget);
         }
 
-        void ClearHighlights()
+        // ── 选择（1/2）──
+        void OnSelectPrev() => Cycle(-1);
+        void OnSelectNext() => Cycle(+1);
+
+        void Cycle(int dir)
         {
-            foreach (var p in _candidates) if (p != null) p.Highlighted = false;
+            if (Current == State.Spreading || _candidates.Count == 0) return;
+            int idx = _selectedTarget != null ? _candidates.IndexOf(_selectedTarget) : -1;
+            idx = (idx + dir + _candidates.Count) % _candidates.Count;
+            _selectedTarget = _candidates[idx];
+            RefreshHighlight();
         }
 
-        /// <summary>对选定目标启动附身（游荡→附身 或 附身→附身）。几何够不到则忽略。</summary>
+        // ── 确认（E）/ 脱离（Attack）──
+        void OnConfirm()
+        {
+            if (Current == State.Spreading) return;
+            if (_selectedTarget != null) Possess(_selectedTarget);
+            else if (_current != null) Detach();
+        }
+
+        void OnDetachKey()
+        {
+            if (Current == State.Possessed) Detach();
+        }
+
+        // ── 状态 ──
+        void EnterIdle()
+        {
+            _selectedTarget = null;
+            _current = null;
+            _candidates.Clear();
+            _detected.Clear();
+            Current = State.Idle;
+            SetControlFrozen(false);
+            _motor?.ApplyProfile(WanderProfile);
+            if (Cubes != null && Player != null)
+            {
+                _aggregate = new AggregateForm(GroundUnderPlayer, BlobRadius, BlobWobble, BlobFlow)
+                {
+                    Dispersion = Mathf.Clamp01(IdleDispersion)
+                };
+                Cubes.SetForm(_aggregate, BlobSpeed);
+            }
+        }
+
+        /// <summary>对选中目标启动附身（常态→case A / 附身→case B）。几何够不到则忽略。</summary>
         public void Possess(Possessable target)
         {
             if (target == null || target == _current) return;
-            if (!ResolveFootAndContact(target, out Vector3 foot, out Vector3 contact))
+            if (!ResolveFootAndContact(target, out _, out _))
             {
                 Debug.Log($"[PossessionDirector] {target.name} 不可附身（悬空/底下没地/被遮挡）。");
                 return;
             }
             if (_co != null) StopCoroutine(_co);
-            _co = StartCoroutine(ExtendToPossessRoutine(target, foot, contact));
+            _co = StartCoroutine(SpreadRoutine(target));
         }
 
-        /// <summary>脱离附身：蜂群从物体表面聚合回地面点成团 → 回游荡。</summary>
+        /// <summary>脱离：触手贴面收回物体旁一侧地面点、聚合成半球、回常态。</summary>
         public void Detach()
         {
             if (_current == null) return;
@@ -222,207 +245,140 @@ namespace Inkform.Nanobots
             _co = StartCoroutine(DetachRoutine(_current));
         }
 
-        IEnumerator ExtendToPossessRoutine(Possessable target, Vector3 foot, Vector3 contact)
+        IEnumerator SpreadRoutine(Possessable target)
         {
-            ClearHighlights();
-            _candidates.Clear();
-            target.Highlighted = true; // 选中目标保持高亮直到包裹
+            foreach (var p in _candidates) if (p != null) p.Highlighted = false;
+            _selectedTarget = null;
+            target.Highlighted = true;
 
-            Current = State.Extend;
+            Current = State.Spreading;
             SetControlFrozen(true);
-            _ = foot; // 落点 F 已在 Possess 闸门用过；树根在接触点 P，这里不再需要 F。
 
-            // 附身→附身：先释放旧物体（留原地、还原碰撞与外观）。
-            if (_current != null && _current != target) Release(_current);
-            _current = null;
-
-            // ① 触手伸出前**一次性预解算整棵蔓延树**（全程贴面、不离地/不离面）：
-            //    蜂群 → **贴地爬行**到接触点 P(物体正下方贴地点) → 沿物体表面递归二分爆叉
-            //    → 表面均匀叶子。airBranchDepth=0/outwardLift=0 → 整棵树贴面、空中不分叉；
-            //    surfaceSubdiv+projector → 表面段投影回最近表面点，分支不穿模；
-            //    最远点采样叶子 → 覆盖整表面均匀。树只发散不汇聚（分离后不回聚）。
-            Vector3[] trunkPath = BuildGroundCrawl(Swarm.Centroid, foot, contact);
+            ResolveFootAndContact(target, out Vector3 foot, out _);
             Vector3[] leaves = target.GetEvenSurfaceSamples(Mathf.Max(1, LeafCount), out _);
-            var projector = SurfaceSubdiv > 0 ? target.GetSurfaceProjector() : null;
-            var tree = NanobotTree.Build(start: trunkPath[0], leafPoints: leaves,
-                surfaceCenter: target.Bounds.center,
-                airBranchDepth: 0, outwardLift: 0f,
-                surfaceSubdiv: SurfaceSubdiv, projectToSurface: projector,
-                trunkPath: trunkPath);
-            _tree = tree; // 供 Gizmos 验收
 
-            // ② 驱动蜂群沿树生长（统一生长前沿，bot 按 i%LeafCount 分摊到各叶路径）。
-            Swarm.SetFormation(new TreeBranchFormation(tree, Trail, BranchThickness,
-                JitterAmp, JitterScale, FlowSpeed), PathSpeed);
-
-            // ③ 驱动方管：抽取**不重叠**的分支中心线 + 根弧长偏移，按全局前沿深度推进生长。
-            if (Tubes != null)
+            var settings = new SpreadPathSolver.Settings
             {
-                float maxArc = tree.GetBranchPolylines(out var branches, out var startArcs);
-                var radii = new List<float>(branches.Count);
-                for (int i = 0; i < branches.Count; i++) radii.Add(1f);
-                Tubes.SetBranches(branches, radii, startArcs);
-                _ = maxArc;
+                GroundSamplesPerUnit = GroundSamplesPerUnit,
+                SurfaceSubdiv = SurfaceSubdiv,
+                DepartMin = DepartMin,
+                DepartMax = DepartMax,
+                GroundSnap = GroundSnap,
+                SurfaceProject = target.GetSurfaceProjector(),
+                SourceProject = null,
+            };
+
+            Vector3[] sources;
+            if (_current != null)
+            {
+                // case B：从当前物体表面取几个源点，贴源表面降到地面再贴地铺向新目标。
+                sources = _current.GetSurfaceSamples(Mathf.Max(1, SourcePointCount));
+                settings.SourceProject = _current.GetSurfaceProjector();
+                Release(_current);
+                _current = null;
+            }
+            else
+            {
+                // case A：源 = metacube 团中心（半球团），贴地伸出主干。
+                sources = new[] { Cubes.Centroid };
             }
 
-            // ④ 表面上色辅助：从接触点 P 起微发光收紧（不再是主包裹，纯辅助）。
-            target.BeginWrapShader(contact);
+            _solver = SpreadPathSolver.Solve(sources, foot, target.Bounds.center, leaves, settings);
+            Cubes.SetForm(new SpreadForm(_solver, Trail, BranchThickness), SpreadSpeed);
 
-            // 单一前沿推进：蜂群 Progress 同时驱动方管 Growth，主干先到、子枝后冒、铺满表面。
-            while (!Swarm.FormationComplete)
-            {
-                if (Tubes != null) Tubes.Growth = Swarm.Progress;
-                yield return null;
-            }
-            if (Tubes != null) Tubes.Growth = 1f;
+            while (!Cubes.FormComplete) yield return null;
 
-            // ⑤ 控制转移：玩家贴合到物体并驾驶它；蜂群转为贴附其(移动中的)表面。
+            // 附身生效：控制转移 + cube 转贴面跟随。
             target.OnPossessed();
-            AttachControlTo(target);
-            // ⑥ 空中主干流空：bot 已转 WrapFollow 在身上，主干方管从根排空后清掉。
-            if (Tubes != null) StartCoroutine(DrainTrunkRoutine(TrunkDrainTime));
-            Current = State.Possess;
+            AttachControlTo(target, _solver.Leaves);
+            Current = State.Possessed;
             _current = target;
             _co = null;
         }
 
         IEnumerator DetachRoutine(Possessable obj)
         {
-            ClearHighlights();
-            _candidates.Clear();
+            foreach (var p in _candidates) if (p != null) p.Highlighted = false;
+            _selectedTarget = null;
 
-            Current = State.Extend;
+            Current = State.Spreading;
             SetControlFrozen(true);
 
-            // 物体旁地面汇聚点 G（落点也用它）。
             Vector3 ground = ComputeGroundPoint(obj);
+            ResolveFootAndContact(obj, out Vector3 foot, out _);
+            Vector3[] leaves = obj.GetEvenSurfaceSamples(Mathf.Max(1, LeafCount), out _);
+            var projector = obj.GetSurfaceProjector();
 
-            // 释放物体（解父、还原碰撞与外观），它停在原地。
             Release(obj);
             _current = null;
 
-            // ① 预解算「收束树」：贴地主干 G→(贴地爬)→物体接触点 P，再沿物体表面铺到叶 →
-            //    **反向**播放即「从表面分股贴面收回、贴地爬回 G」，全程不离面。
-            Vector3[] leaves = obj.GetEvenSurfaceSamples(Mathf.Max(1, LeafCount), out _);
-            var projector = SurfaceSubdiv > 0 ? obj.GetSurfaceProjector() : null;
-            // 物体接触点 P（贴面收束树的 root 邻接段终点）；求不到则退化用 G 直连。
-            Vector3[] trunkPath = ResolveFootAndContact(obj, out Vector3 dFoot, out Vector3 dContact)
-                ? BuildGroundCrawl(ground, dFoot, dContact)
-                : new[] { ground };
-            var tree = NanobotTree.Build(start: trunkPath[0], leafPoints: leaves,
-                surfaceCenter: obj.Bounds.center,
-                airBranchDepth: 0, outwardLift: 0f,
-                surfaceSubdiv: SurfaceSubdiv, projectToSurface: projector,
-                trunkPath: trunkPath);
-            _tree = tree; // 供 Gizmos
-
-            // ② 蜂群反向收束：bot 从各自表面叶子点沿树路径反向收缩 → 分股贴面蔓延汇到 G。
-            Swarm.SetFormation(new TreeBranchFormation(tree, Trail, BranchThickness,
-                JitterAmp, JitterScale, FlowSpeed, reverse: true), PathSpeed);
-
-            // ③ 方管同步：前沿 Growth 从 1→0（末梢=表面段先收、G-trunk 最后）跟随收束。
-            if (Tubes != null)
+            // 收束触手：source=地面点 G、leaves=物体表面点 → 正向是 G 爬上物体；反向播放=从表面收回 G。
+            var settings = new SpreadPathSolver.Settings
             {
-                tree.GetBranchPolylines(out var branches, out var startArcs);
-                var radii = new List<float>(branches.Count);
-                for (int i = 0; i < branches.Count; i++) radii.Add(1f);
-                Tubes.SetBranches(branches, radii, startArcs);
-                Tubes.Drain = 0f;
-                Tubes.Growth = 1f;
-            }
+                GroundSamplesPerUnit = GroundSamplesPerUnit,
+                SurfaceSubdiv = SurfaceSubdiv,
+                DepartMin = DepartMin,
+                DepartMax = DepartMax,
+                GroundSnap = GroundSnap,
+                SurfaceProject = projector,
+                SourceProject = null,
+            };
+            _solver = SpreadPathSolver.Solve(new[] { ground }, foot, obj.Bounds.center, leaves, settings);
+            Cubes.SetForm(new SpreadForm(_solver, Trail, BranchThickness, reverse: true), SpreadSpeed);
 
-            // reverse 下 Progress=1 即全员回到 G。方管 Growth = 1-Progress 同步退潮。
-            while (!Swarm.FormationComplete)
-            {
-                if (Tubes != null) Tubes.Growth = 1f - Swarm.Progress;
-                yield return null;
-            }
-            if (Tubes != null) Tubes.Clear();
+            while (!Cubes.FormComplete) yield return null;
 
-            // ④ 落地成团：bot 已在 G，转常驻团；控制体落到 G 旁地面，回游荡（不可跳）。
-            Swarm.SetFormation(new BlobFormation(() => ground), BlobSpeed);
             MovePlayerTo(ground + Vector3.up * PlayerGroundOffset);
             _co = null;
-            EnterWander();
+            EnterIdle();
         }
 
-        // 把玩家控制贴合到物体：物体 parent 到玩家(随驾驶移动)、关物体碰撞、玩家安全落位、
-        // 蜂群转 WrapFollow。贴附点用**蔓延末态的树叶子**(bot 蔓延时正落在这些点) → 附身瞬间
-        // 零跳变、流体无缝衔接到身上；反变换到物体局部 → 随驾驶移动整体跟随。
-        void AttachControlTo(Possessable target)
+        // 控制转移：玩家胶囊先落位到物体处，再 parent 物体随驾驶移动、关其碰撞、cube 转贴面跟随。
+        void AttachControlTo(Possessable target, Vector3[] worldLeaves)
         {
-            // ① 先接管层级与碰撞（顺序确定，避免坐标系歧义）。
+            // 世界包围盒：在任何重定位/挂父之前取，保证世界坐标准确。
+            Bounds b = target.Bounds;
+
+            // ① 先把控制胶囊移到物体处——此刻物体尚未挂到玩家下，不会被一起拖走（否则物体瞬移）。
+            //    底对齐（b.min.y）而非顶：胶囊底≈物体底，驾驶时物体随胶囊立于地面、不上浮/下陷。
+            //    PlayerGroundOffset(1.1) 略大于胶囊半高(1.0)，留 ~0.1 离地间隙防去穿插弹飞。
+            MovePlayerTo(new Vector3(b.center.x, b.min.y + PlayerGroundOffset, b.center.z));
+
+            // ② 再挂父（worldPositionStays=true）：物体保持原世界位，从此随玩家移动。
             target.transform.SetParent(Player, true);
             target.SetCollidersEnabled(false);
-            if (PlayerVisual != null) PlayerVisual.gameObject.SetActive(false);
 
-            // ② 玩家安全落位：放到物体包围盒中心，但确保玩家胶囊底不嵌入地面/残留几何，
-            //    避免解冻刚体时被物理去穿插弹飞（带飞相机 → bot「闪掉」的根因）。
-            Bounds b = target.Bounds;
-            Vector3 safePos = new Vector3(b.center.x, b.max.y + PlayerGroundOffset, b.center.z);
-            MovePlayerTo(safePos);
+            // 贴附点：每 cube 一个噪点密度分布的独立表面点（分散、不叠团）。物体仍在原位，无缝衔接。
+            int coverCount = Cubes != null ? Mathf.Max(1, Cubes.BotCount) : Mathf.Max(1, LeafCount);
+            Vector3[] samples = target.GetNoiseSurfaceSamples(coverCount, CoverNoiseScale, CoverNoiseContrast);
+            // 兜底：噪点采样异常时退回蔓延末态叶子 / 表面采样 / 中心。
+            if (samples == null || samples.Length == 0 || !IsFinite(samples[0]))
+                samples = (worldLeaves != null && worldLeaves.Length > 0 && IsFinite(worldLeaves[0]))
+                    ? worldLeaves
+                    : target.GetSurfaceSamples(Mathf.Max(1, LeafCount));
+            if (samples == null || samples.Length == 0) samples = new[] { b.center };
 
-            // ③ 贴附点：优先蔓延末态的树叶子(无缝)；空/非法(NaN)兜底新采样；再兜底物体中心。
-            Vector3[] worldSamples = (_tree != null && _tree.LeafCount > 0 && IsFinite(_tree.Leaves[0]))
-                ? _tree.Leaves
-                : target.GetSurfaceSamples(Mathf.Max(1, WrapSampleCount));
-            if (worldSamples == null || worldSamples.Length == 0)
-                worldSamples = new[] { b.center };
+            var local = new Vector3[samples.Length];
+            for (int i = 0; i < samples.Length; i++)
+                local[i] = target.transform.InverseTransformPoint(samples[i]);
+            Cubes.SetForm(new PossessForm(target.transform, local), 1f);
 
-            var local = new Vector3[worldSamples.Length];
-            for (int i = 0; i < worldSamples.Length; i++)
-                local[i] = target.transform.InverseTransformPoint(worldSamples[i]);
-            Swarm.SetFormation(new WrapFollowFormation(target.transform, local), 1f);
-
-            // ④ 解冻并切可跳 profile；清零速度防解冻瞬间残余冲量弹飞。
             SetControlFrozen(false);
             if (_playerRb != null && !_playerRb.isKinematic)
             {
                 _playerRb.linearVelocity = Vector3.zero;
                 _playerRb.angularVelocity = Vector3.zero;
             }
-            _motor?.ApplyProfile(PossessProfile); // 可跳
+            _motor?.ApplyProfile(PossessProfile);
         }
 
-        static bool IsFinite(Vector3 v) =>
-            !(float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z)
-              || float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z));
-
-        // 附身后主干从根流空：方管 Drain 0→1(离根近的 trunk 先被吃掉)，收净后清管。
-        // bot 流体此时已转 WrapFollow 贴在物体上 → 空中主干自然流走、只剩身上流体。
-        IEnumerator DrainTrunkRoutine(float duration)
-        {
-            if (Tubes == null) yield break;
-            float d = 0f;
-            float inv = 1f / Mathf.Max(0.01f, duration);
-            while (d < 1f)
-            {
-                d = Mathf.Clamp01(d + inv * Time.deltaTime);
-                Tubes.Drain = d;
-                yield return null;
-            }
-            Tubes.Clear();
-        }
-
-        // 释放物体：解除 parent、恢复碰撞、还原包裹外观、取消高亮。
+        // 释放物体：解父、恢复碰撞、取消高亮。
         void Release(Possessable p)
         {
             if (p == null) return;
             if (p.transform.parent == Player) p.transform.SetParent(null, true);
             p.SetCollidersEnabled(true);
-            p.ResetWrap();
             p.Highlighted = false;
-        }
-
-        // 延伸过程冻结控制体：停 PlayerMotor 并设 kinematic（不受重力/输入），过渡结束再恢复。
-        void SetControlFrozen(bool frozen)
-        {
-            if (_motor != null) _motor.enabled = !frozen;
-            if (_playerRb != null)
-            {
-                if (frozen) _playerRb.linearVelocity = Vector3.zero;
-                _playerRb.isKinematic = frozen;
-            }
         }
 
         void MovePlayerTo(Vector3 pos)
@@ -435,80 +391,72 @@ namespace Inkform.Nanobots
             }
         }
 
-        /// <summary>
-        /// 贴地主干折线：从蜂群质心 a 到 foot(物体正下方贴地点)按 GroundSamplesPerUnit 细分，
-        /// 每个中间点朝下 raycast 贴 GroundMask（+离地 GroundClearance），失败退化线性插值；
-        /// 末点接 contact(P=物体最低表面点)。→ bot 沿地面爬到 P，全程不离地。
-        /// </summary>
-        Vector3[] BuildGroundCrawl(Vector3 a, Vector3 foot, Vector3 contact)
-        {
-            // 起点也贴地（蜂群可能略悬空）。
-            Vector3 start = SnapToGround(a, out Vector3 startOnGround) ? startOnGround : a;
-
-            float horiz = Vector3.Distance(new Vector3(start.x, 0f, start.z),
-                                           new Vector3(foot.x, 0f, foot.z));
-            int n = Mathf.Max(1, Mathf.CeilToInt(horiz * Mathf.Max(0.1f, GroundSamplesPerUnit)));
-
-            var pts = new List<Vector3>(n + 2) { start };
-            for (int k = 1; k <= n; k++)
-            {
-                float f = k / (float)n;
-                Vector3 lerp = Vector3.Lerp(start, foot, f);
-                pts.Add(SnapToGround(lerp, out Vector3 onGround) ? onGround : lerp);
-            }
-            // 显式收口到 foot(贴地)，再接 P(物体表面接触点)。
-            pts[pts.Count - 1] = SnapToGround(foot, out Vector3 footG) ? footG : foot;
-            pts.Add(contact);
-            return pts.ToArray();
-        }
-
-        // 把世界点朝下 raycast 贴到 GroundMask（+离地高度）。命中返回 true。
-        bool SnapToGround(Vector3 world, out Vector3 onGround)
-        {
-            Vector3 origin = new Vector3(world.x, world.y + 20f, world.z);
-            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f,
-                    GroundMask, QueryTriggerInteraction.Ignore))
-            {
-                onGround = hit.point + Vector3.up * GroundClearance;
-                return true;
-            }
-            onGround = world;
-            return false;
-        }
-
-        // 脱离聚合的地面点：物体周围随机水平偏移朝下命中地面；兜底物体正下方/原地。
+        // 脱离聚合地面点：物体**面向摄像机一侧**水平偏移朝下命中地面；兜底正下方/原地。
         Vector3 ComputeGroundPoint(Possessable obj)
         {
             Bounds b = obj.Bounds;
             Vector3 c = b.center;
-            float ang = Random.value * Mathf.PI * 2f;
-            Vector3 probe = c + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * DetachGroundRadius;
+
+            // 面向摄像机的水平方向（无摄像机则退回物体正下方，dir=0）。
+            if (_cam == null) _cam = Camera.main;
+            Vector3 dir = Vector3.zero;
+            if (_cam != null)
+            {
+                dir = _cam.transform.position - c;
+                dir.y = 0f;
+                dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : Vector3.zero;
+            }
+            Vector3 probe = c + dir * DetachGroundRadius;
 
             Vector3 origin = new Vector3(probe.x, b.max.y + 5f, probe.z);
-            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f,
-                    GroundMask, QueryTriggerInteraction.Ignore))
+            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f, GroundMask, QueryTriggerInteraction.Ignore))
                 return hit.point;
-
             origin = new Vector3(c.x, b.max.y + 5f, c.z);
-            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit2, 200f,
-                    GroundMask, QueryTriggerInteraction.Ignore))
+            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit2, 200f, GroundMask, QueryTriggerInteraction.Ignore))
                 return hit2.point;
-
             return new Vector3(c.x, 0f, c.z);
         }
 
-        /// <summary>
-        /// 求落点 F 与接触点 P（= 包裹入射点）。
-        /// F = 目标包围盒中心朝下命中地面；P = 从 F 朝上命中目标表面（最低点）。
-        /// 任一失败返回 false = 不可附身。
-        /// </summary>
+        static bool IsFinite(Vector3 v) =>
+            !(float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z)
+              || float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z));
+
+        void SetControlFrozen(bool frozen)
+        {
+            if (_motor != null) _motor.enabled = !frozen;
+            if (_playerRb != null)
+            {
+                if (frozen) _playerRb.linearVelocity = Vector3.zero;
+                _playerRb.isKinematic = frozen;
+            }
+        }
+
+        // 玩家脚下地面点（半球底面落地用）。
+        Vector3 GroundUnderPlayer()
+        {
+            if (Player == null) return Vector3.zero;
+            Vector3 o = Player.position + Vector3.up * 0.5f;
+            if (Physics.Raycast(o, Vector3.down, out RaycastHit hit, 50f, GroundMask, QueryTriggerInteraction.Ignore))
+                return hit.point;
+            return Player.position - Vector3.up;
+        }
+
+        // 任意点 → 贴地点（朝下 raycast + 离地高度）。miss 返回原点。供 SpreadPathSolver。
+        Vector3 GroundSnap(Vector3 world)
+        {
+            Vector3 origin = new Vector3(world.x, world.y + 20f, world.z);
+            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f, GroundMask, QueryTriggerInteraction.Ignore))
+                return hit.point + Vector3.up * GroundClearance;
+            return world;
+        }
+
+        /// <summary>求落点 F 与接触点 P 作为可附身闸门。任一 raycast 失败 = 不可附身。</summary>
         bool ResolveFootAndContact(Possessable target, out Vector3 foot, out Vector3 contact)
         {
             foot = contact = Vector3.zero;
             Bounds b = target.Bounds;
             Vector3 center = b.center;
 
-            // F：从中心上方一点朝下打到地面。
             Vector3 downOrigin = new Vector3(center.x, b.max.y + 0.5f, center.z);
             float downDist = (b.max.y + 0.5f) - (center.y - b.extents.y - 50f);
             if (!Physics.Raycast(downOrigin, Vector3.down, out RaycastHit groundHit,
@@ -516,12 +464,10 @@ namespace Inkform.Nanobots
                 return false;
             foot = groundHit.point;
 
-            // P：从 F 略低处朝上打到目标自身表面（最低可见表面点）。
             Vector3 upOrigin = foot + Vector3.down * 0.05f;
             if (!Physics.Raycast(upOrigin, Vector3.up, out RaycastHit surfHit,
                     b.size.y + 1f, PossessableMask, QueryTriggerInteraction.Ignore))
                 return false;
-            // 命中的必须是目标本身（不是别的可附身物挡在前面）。
             if (surfHit.collider.GetComponentInParent<Possessable>() != target)
                 return false;
             contact = surfHit.point;
@@ -532,18 +478,15 @@ namespace Inkform.Nanobots
         {
             if (Player != null)
             {
-                Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.25f);
+                Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.2f);
                 Gizmos.DrawWireSphere(Player.position, ScanRadius);
             }
-
-            // 预解算蔓延树：分叉线段 + 叶子末梢点（Play 模式选中本物体可见，便于验收
-            // 均匀覆盖与不穿插）。
-            if (_tree != null && _tree.LeafCount > 0)
+            if (_solver != null && _solver.LeafCount > 0)
             {
-                Gizmos.color = new Color(0.2f, 1f, 0.6f, 0.8f);
-                foreach (var e in _tree.Edges) Gizmos.DrawLine(e.a, e.b);
+                Gizmos.color = new Color(0.2f, 1f, 0.6f, 0.7f);
+                foreach (var e in _solver.Edges) Gizmos.DrawLine(e.a, e.b);
                 Gizmos.color = new Color(1f, 0.7f, 0.2f, 1f);
-                foreach (var leaf in _tree.Leaves) Gizmos.DrawSphere(leaf, 0.06f);
+                foreach (var leaf in _solver.Leaves) Gizmos.DrawSphere(leaf, 0.05f);
             }
         }
     }
