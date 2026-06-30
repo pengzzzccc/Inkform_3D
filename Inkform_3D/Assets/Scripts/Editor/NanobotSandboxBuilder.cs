@@ -19,6 +19,8 @@ namespace Inkform.EditorTools
         const string ScenePath = "Assets/Scenes/NanobotSandbox.unity";
         const string PossessableMatPath = "Assets/Settings/M_Possessable.mat";
         const string MetacubeMatPath = "Assets/Settings/M_Metacube.mat";
+        const string MetacubeRaymarchMatPath = "Assets/Settings/M_MetacubeRaymarch.mat";
+        const string MetacubeGridComputePath = "Assets/Shaders/MetacubeGrid.compute";
         const string InputAssetPath = "Assets/InputSystem_Actions.inputactions";
         const string UntitledModelPath = "Assets/Model/Untitled.fbx";
 
@@ -82,6 +84,16 @@ namespace Inkform.EditorTools
             cubes.PulseFreqJitter = 0.4f;
             cubes.SizeJitter = 0.3f;
             cubes.SpinSpeed = 18f;
+            // Metaball（box-SDF 光线步进融合）路径
+            cubes.Mode = MetacubeSystem.RenderMode.Metaball;
+            cubes.RaymarchMaterial = EnsureMetacubeRaymarchMaterial();
+            cubes.GridCompute = AssetDatabase.LoadAssetAtPath<ComputeShader>(MetacubeGridComputePath);
+            if (cubes.GridCompute == null)
+                Debug.LogWarning($"[NanobotSandboxBuilder] 未找到 {MetacubeGridComputePath}（compute 尚未导入？）。Metaball 将回退离散方块。");
+            cubes.SmoothK = 0.06f;
+            cubes.GridRes = 32;
+            cubes.MaxCubesPerCell = 24;
+            cubes.RayMaxSteps = 96;
 
             // 常态本体即 metacube 半球团 → 隐藏玩家胶囊视觉体。
             var body = player.transform.Find("Body");
@@ -314,6 +326,30 @@ namespace Inkform.EditorTools
             if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.75f);
             // 暗场景里高金属度易发黑，给一点冷色自发光保底（配合场景反射探针）。
             mat.EnableKeyword("_EMISSION");
+            if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", new Color(0.10f, 0.18f, 0.30f));
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        // metaball raymarch 材质（Inkform/MetacubeRaymarch）。shader 未导入则返回 null（系统自动回退离散方块）。
+        static Material EnsureMetacubeRaymarchMaterial()
+        {
+            EnsureFolder("Assets/Settings");
+            var sh = Shader.Find("Inkform/MetacubeRaymarch");
+            if (sh == null)
+            {
+                Debug.LogWarning("[NanobotSandboxBuilder] 找不到 Inkform/MetacubeRaymarch shader（尚未导入？）。Metaball 回退离散方块。");
+                return null;
+            }
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(MetacubeRaymarchMatPath);
+            if (mat == null)
+            {
+                mat = new Material(sh);
+                AssetDatabase.CreateAsset(mat, MetacubeRaymarchMatPath);
+            }
+            else if (mat.shader != sh) mat.shader = sh;
+
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", new Color(0.7f, 0.78f, 0.9f));
             if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", new Color(0.10f, 0.18f, 0.30f));
             EditorUtility.SetDirty(mat);
             return mat;

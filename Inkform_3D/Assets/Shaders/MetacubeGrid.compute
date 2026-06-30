@@ -1,0 +1,52 @@
+// 均匀网格构建：把每个 metacube（box 源）按其影响范围 footprint 散布进所覆盖的所有网格格，
+// 供 raymarch 时每个采样点只查"自身所在格"即可拿到所有可能影响它的 box（足迹散布保证）。
+#pragma kernel Clear
+#pragma kernel Scatter
+
+struct GpuCube { float3 pos; float halfExtent; };
+
+StructuredBuffer<GpuCube> _Cubes;
+RWStructuredBuffer<int> _CellCount;
+RWStructuredBuffer<int> _CellItems;
+
+int _Count;
+int _GridRes;
+int _MaxPerCell;
+float3 _GridMin;
+float _CellSize;
+float _Influence;
+
+int CellIndex(int3 c) { return (c.z * _GridRes + c.y) * _GridRes + c.x; }
+
+[numthreads(64, 1, 1)]
+void Clear(uint3 id : SV_DispatchThreadID)
+{
+    int i = (int)id.x;
+    if (i >= _GridRes * _GridRes * _GridRes) return;
+    _CellCount[i] = 0;
+}
+
+[numthreads(64, 1, 1)]
+void Scatter(uint3 id : SV_DispatchThreadID)
+{
+    int i = (int)id.x;
+    if (i >= _Count) return;
+
+    GpuCube cu = _Cubes[i];
+    float R = cu.halfExtent + _Influence;
+
+    int3 lo = (int3)floor((cu.pos - R - _GridMin) / _CellSize);
+    int3 hi = (int3)floor((cu.pos + R - _GridMin) / _CellSize);
+    lo = clamp(lo, 0, _GridRes - 1);
+    hi = clamp(hi, 0, _GridRes - 1);
+
+    for (int z = lo.z; z <= hi.z; z++)
+    for (int y = lo.y; y <= hi.y; y++)
+    for (int x = lo.x; x <= hi.x; x++)
+    {
+        int cell = CellIndex(int3(x, y, z));
+        int slot;
+        InterlockedAdd(_CellCount[cell], 1, slot);
+        if (slot < _MaxPerCell) _CellItems[cell * _MaxPerCell + slot] = i;
+    }
+}
